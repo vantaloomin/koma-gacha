@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Koma mark: four white panels whose gutters spell a K -->
+  <defs>
+    <linearGradient id="k" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4f7cff" />
+      <stop offset="1" stop-color="#8b5cf6" />
+    </linearGradient>
+    <radialGradient id="kg" cx="8" cy="4" r="22" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.28" />
+      <stop offset="1" stop-color="#fff" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+  <rect width="32" height="32" rx="7.5" fill="url(#k)" />
+  <rect x="6" y="6" width="20" height="20" rx="2" fill="#fff" />
+  <path d="M12.5 4v24M12.5 16 29 3.78M12.5 16 29 28.22" stroke="url(#k)" stroke-width="3" fill="none" />
+  <rect width="32" height="32" rx="7.5" fill="url(#kg)" />
+</svg>

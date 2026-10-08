@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 136 40" width="136" height="40">
+  <style>.w { fill: #1d1d1f } .j { fill: #8e8e93 } @media (prefers-color-scheme: dark) { .w { fill: #f5f5f7 } .j { fill: #a1a1a6 } }</style>
+  <!-- Koma lockup: mark + wordmark (Inter 650; falls back to the system sans) -->
+  <svg x="0" y="4" width="32" height="32" viewBox="0 0 32 32">
+    <defs>
+    <linearGradient id="k" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4f7cff" />
+      <stop offset="1" stop-color="#8b5cf6" />
+    </linearGradient>
+    <radialGradient id="kg" cx="8" cy="4" r="22" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.28" />
+      <stop offset="1" stop-color="#fff" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+  <rect width="32" height="32" rx="7.5" fill="url(#k)" />
+  <rect x="6" y="6" width="20" height="20" rx="2" fill="#fff" />
+  <path d="M12.5 4v24M12.5 16 29 3.78M12.5 16 29 28.22" stroke="url(#k)" stroke-width="3" fill="none" />
+  <rect width="32" height="32" rx="7.5" fill="url(#kg)" />
+  </svg>
+
+  <text x="42" y="28.5" font-family="'Inter Variable', Inter, -apple-system, 'Segoe UI', system-ui, sans-serif" font-size="25" font-weight="650" letter-spacing="-0.6" class="w">Koma</text>
+  <text x="111" y="28.5" font-family="'Hiragino Sans', 'Yu Gothic UI', 'Noto Sans JP', sans-serif" font-size="9" font-weight="500" class="j">コマ</text>
+</svg>

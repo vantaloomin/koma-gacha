@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Koma</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  </head>
+  <body>
+    <header class="appbar">
+      <div class="brand">
+        <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
+          <defs>
+          <linearGradient id="logo-k" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stop-color="#4f7cff" />
+          <stop offset="1" stop-color="#8b5cf6" />
+          </linearGradient>
+          <radialGradient id="logo-kg" cx="8" cy="4" r="22" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stop-color="#fff" stop-opacity="0.28" />
+          <stop offset="1" stop-color="#fff" stop-opacity="0" />
+          </radialGradient>
+          </defs>
+          <rect width="32" height="32" rx="7.5" fill="url(#logo-k)" />
+          <rect x="6" y="6" width="20" height="20" rx="2" fill="#fff" />
+          <path d="M12.5 4v24M12.5 16 29 3.78M12.5 16 29 28.22" stroke="url(#logo-k)" stroke-width="3" fill="none" />
+          <rect width="32" height="32" rx="7.5" fill="url(#logo-kg)" />
+        </svg>
+        <span class="wordmark">Koma<span class="kana" lang="ja">コマ</span></span>
+      </div>
+      <nav class="tabs" role="tablist" aria-label="Workspace">
+        <button class="tab" data-tab="layout" role="tab" data-tip="Pages" data-kbd="1"><i data-icon="grid"></i><span>Pages</span></button>
+        <button class="tab" data-tab="story" role="tab" data-tip="Shots" data-kbd="2"><i data-icon="board"></i><span>Shots</span></button>
+        <button class="tab" data-tab="poses" role="tab" data-tip="Poses" data-kbd="3"><i data-icon="pose"></i><span>Poses</span></button>
+      </nav>
+      <div class="appbar-end">
+        <button class="icon-btn" id="theme-toggle" data-menu="theme-menu" aria-label="Appearance"></button>
+        <div id="theme-menu" class="menu narrow" popover role="menu">
+          <button data-theme-pick="system" role="menuitemradio"><i data-icon="monitor"></i><span>System</span><i data-icon="check" class="tick"></i></button>
+          <button data-theme-pick="light" role="menuitemradio"><i data-icon="sun"></i><span>Light</span><i data-icon="check" class="tick"></i></button>
+          <button data-theme-pick="dark" role="menuitemradio"><i data-icon="moon"></i><span>Dark</span><i data-icon="check" class="tick"></i></button>
+        </div>
+        <button class="icon-btn" id="about-open" aria-label="About Koma" title="About"><i data-icon="info" data-size="18"></i></button>
+      </div>
+    </header>
+
+    <!-- ===================== LAYOUTS TAB ===================== -->
+    <main id="tab-layout" class="tabpage ws ws-layout" hidden>
+      <aside class="sidebar" aria-label="Layout settings">
+        <div class="sidebar-scroll">
+          <section class="group">
+            <h3 class="group-title">Style</h3>
+            <div class="chips" id="lp-presets"></div>
+          </section>
+
+          <section class="group">
+            <h3 class="group-title">Page</h3>
+            <div class="list">
+              <label class="field">Format <select id="lp-format"></select></label>
+              <label class="field">Reading <select id="lp-dir"><option value="rtl">Right to left</option><option value="ltr">Left to right</option></select></label>
+              <label class="field">Tiers <select id="lp-tiers"></select></label>
+              <label class="field">Grid <select id="lp-gridShape"></select></label>
+              <label class="field">Bleed <select id="lp-bleedMode"></select></label>
+            </div>
+          </section>
+
+          <section class="group">
+            <h3 class="group-title">Dividers</h3>
+            <div class="list">
+              <label class="slider">Horizontal tilt <input type="range" id="lp-hTilt" min="0" max="100" /><output></output></label>
+              <label class="slider">Vertical tilt <input type="range" id="lp-vTilt" min="0" max="100" /><output></output></label>
+              <label class="slider">Steep slants <input type="range" id="lp-steep" min="0" max="100" /><output></output></label>
+              <label class="field switch-field">Repeat slant on every row <input type="checkbox" class="switch" id="lp-repeat" /></label>
+            </div>
+          </section>
+
+          <section class="group">
+            <h3 class="group-title">Panels</h3>
+            <div class="list">
+              <label class="slider">Bleed chance <input type="range" id="lp-bleed" min="0" max="100" /><output></output></label>
+              <label class="slider">Insets <input type="range" id="lp-inset" min="0" max="100" /><output></output></label>
+              <label class="slider">Diagonal splits <input type="range" id="lp-diag" min="0" max="100" /><output></output></label>
+              <label class="slider">Inner splits <input type="range" id="lp-inner" min="0" max="100" /><output></output></label>
+              <label class="slider">Big panels <input type="range" id="lp-big" min="0" max="100" /><output></output></label>
+              <label class="slider">Border width <input type="range" id="lp-border" min="1" max="10" /><output></output></label>
+            </div>
+          </section>
+
+          <section class="group">
+            <h3 class="group-title">Display</h3>
+            <div class="list">
+              <label class="field switch-field">Reading-order numbers <input type="checkbox" class="switch" id="lp-numbers" checked /></label>
+              <label class="field switch-field">Inner frame guide <input type="checkbox" class="switch" id="lp-guide" checked /></label>
+              <label class="field">Pages per batch <select id="lp-count"><option>12</option><option>24</option><option>48</option></select></label>
+            </div>
+          </section>
+        </div>
+      </aside>
+
+      <section class="ws-main">
+        <div class="toolbar">
+          <div class="toolbar-title">
+            <h1>Pages</h1>
+            <span class="subtle" id="lp-summary"></span>
+          </div>
+          <span class="spacer"></span>
+          <label class="seed-field" title="Same seed, same batch"><span>Seed</span><input type="text" id="lp-seed" class="seed" spellcheck="false" /></label>
+          <button class="btn primary" id="lp-generate"><i data-icon="dices"></i><span>New batch</span></button>
+        </div>
+        <div class="scroll-area">
+          <div id="lp-grid" class="layout-grid"></div>
+        </div>
+      </section>
+
+      <dialog id="lp-dialog" class="sheet">
+        <header class="sheet-head">
+          <h2 id="lp-dlg-title"></h2>
+          <button class="icon-btn" id="lp-close" aria-label="Close"><i data-icon="x" data-size="18"></i></button>
+        </header>
+        <div class="dialog-body">
+          <div id="lp-big-svg" class="big-svg"></div>
+          <div class="dialog-side">
+            <button class="btn primary block" id="lp-use"><i data-icon="board"></i><span>Storyboard this page</span></button>
+            <button class="btn block" id="lp-svg"><i data-icon="svg"></i><span>Export SVG</span></button>
+            <button class="btn block" id="lp-png"><i data-icon="png"></i><span>Export PNG</span></button>
+            <p class="hint">Opens this page in Shots, where each panel gets a camera.</p>
+          </div>
+        </div>
+      </dialog>
+    </main>
+
+    <!-- ===================== STORYBOARD TAB ===================== -->
+    <main id="tab-story" class="tabpage ws ws-story" hidden>
+      <div class="toolbar story-toolbar">
+        <div class="seg" id="sb-view" role="group" aria-label="View">
+          <button data-v="single" class="on" title="One page"><i data-icon="single"></i><span>Page</span></button>
+          <button data-v="compare" title="All proposals side by side"><i data-icon="compare"></i><span>Compare</span></button>
+        </div>
+        <span class="divider"></span>
+        <button class="btn ghost drawer-open" data-pane="layout" title="Layout"><i data-icon="layout"></i><span>Layout</span></button>
+        <button class="btn ghost drawer-open" data-pane="chars" title="Characters"><i data-icon="users"></i><span>Cast</span></button>
+        <span class="meta" id="sb-meta"></span>
+        <div class="toolbar-end">
+        <button class="icon-btn" id="sb-undo" title="Undo" data-kbd="Ctrl Z" aria-label="Undo"><i data-icon="undo" data-size="18"></i></button>
+        <button class="icon-btn" id="sb-del" title="Delete selected panels" data-kbd="Del" aria-label="Delete selected panels"><i data-icon="trash" data-size="18"></i></button>
+        <span class="divider"></span>
+        <button class="btn" id="sb-prompt" title="Reference image and prompt for an image model"><i data-icon="sparkles"></i><span>Image prompt</span></button>
+        <button class="btn" data-menu="export-menu"><i data-icon="download"></i><span>Export</span><i data-icon="down" data-size="14"></i></button>
+        <div id="export-menu" class="menu" popover role="menu">
+          <button id="sb-png" role="menuitem"><i data-icon="png"></i><span>PNG<small>2400 px tall</small></span></button>
+          <button id="sb-svg" role="menuitem"><i data-icon="svg"></i><span>SVG<small>Layered</small></span></button>
+          <button id="sb-print" role="menuitem"><i data-icon="print"></i><span>Print PNG<small>300 dpi, 3 mm bleed, crop marks</small></span></button>
+          <button id="sb-json" role="menuitem"><i data-icon="json"></i><span>Shot list<small>JSON</small></span></button>
+          <hr />
+          <button id="sb-link" role="menuitem"><i data-icon="link"></i><span>Copy link</span></button>
+        </div>
+        <button class="btn primary" id="g-roll" title="Roll new camera plans" data-kbd="R"><i data-icon="dices"></i><span>Roll</span></button>
+        </div>
+      </div>
+
+      <aside class="rail" aria-label="Proposals">
+        <h3 class="rail-title">Proposals</h3>
+        <div id="sb-strip" class="strip"></div>
+      </aside>
+
+      <section class="stage" id="sb-stage">
+        <div id="sb-single">
+          <div class="page-wrap"><div class="page-frame" id="sb-frame"><canvas id="sb-page" aria-label="Storyboard page"></canvas><svg id="sb-overlay" aria-hidden="true" preserveAspectRatio="none"></svg></div></div>
+          <p class="stage-hint">Click a panel to select it, Shift-click to add more. Drag balloons to move them.</p>
+        </div>
+        <div id="sb-compare" class="compare-grid" hidden></div>
+      </section>
+
+      <aside class="inspector" aria-label="Inspector">
+        <div class="ptabs" data-ptabs="story">
+          <button data-pane="panel">Panel</button>
+          <button data-pane="scene">Scene</button>
+          <button data-pane="gacha">Gacha</button>
+          <button data-pane="view">View</button>
+          <button data-pane="score">Score</button>
+        </div>
+        <div class="inspector-scroll">
+          <section data-ptab-group="story" data-pane="panel">
+            <div id="sb-inspector"></div>
+          </section>
+
+          <section data-ptab-group="story" data-pane="scene">
+            <h3 class="group-title">Floor plan</h3>
+            <canvas id="sb-top" width="640" height="460"></canvas>
+            <p class="hint">Seen from above, with the camera side at the bottom. Wedges are each panel's camera. Drag a character to move them, or select one and use the arrow keys (Shift for bigger steps).</p>
+            <button class="btn" id="sb-resetpos"><i data-icon="reset"></i><span>Reset positions</span></button>
+          </section>
+
+          <section data-ptab-group="story" data-pane="gacha">
+            <div class="list first">
+              <label class="field">Seed <input type="text" id="g-seed" class="seed" spellcheck="false" /></label>
+              <label class="field">Tone <select id="g-tone"></select></label>
+            </div>
+            <h3 class="group-title">Draw style</h3>
+            <div class="seg full" id="g-style"></div>
+            <h3 class="group-title">Intensity</h3>
+            <div class="seg full" id="g-intensity"><button data-v="strong">Strong</button><button data-v="normal">Normal</button><button data-v="quiet">Quiet</button></div>
+            <p class="hint">Roll draws six new camera plans. Locked panels are kept.</p>
+          </section>
+
+          <section data-ptab-group="story" data-pane="view">
+            <h3 class="group-title">Rendering</h3>
+            <div class="seg full" id="r-style"><button data-v="shaded">Shaded</button><button data-v="toon">Toon</button><button data-v="silhouette">Silhouette</button><button data-v="lineart">Line art</button></div>
+            <div class="checks" id="r-show"></div>
+          </section>
+
+          <section data-ptab-group="story" data-pane="score">
+            <div id="sb-scores"></div>
+            <h3 class="group-title">Panels</h3>
+            <div id="sb-shapes"></div>
+            <details class="disclosure">
+              <summary>How to read the diagnostics</summary>
+              <p>The reading-flow line connects panel centres in reading order. ▲ marks where the eye enters a panel and ○ where it leaves. A speaking panel reads entry → balloon → speaker's face → exit, and the gacha rewards cameras that put the balloon near the entry. Dashed ellipses are suggested balloon spots that stay clear of faces. The purple dashed line is the conversation axis: every camera stays on one side of it (the 180° rule), and a “!” on a score means a manual edit crossed it. Gaze arrows show where eyes point: ◎ means looking at the reader, × means facing away. Scores are green at 85+, amber at 70+, and red below that.</p>
+            </details>
+          </section>
+        </div>
+      </aside>
+    </main>
+
+    <!-- ===================== POSES TAB ===================== -->
+    <main id="tab-poses" class="tabpage ws ws-poses" hidden>
+      <aside class="sidebar" aria-label="Pose library">
+        <div class="sidebar-head">
+          <h1>Library</h1>
+          <div class="search"><i data-icon="search" data-size="15"></i><input type="search" id="pe-search" placeholder="Search poses" /></div>
+          <div class="row">
+            <select id="pe-cat" aria-label="Category"></select>
+          </div>
+          <label class="field switch-field compact">Adult pack <small>18+, adult characters only</small><input type="checkbox" class="switch" id="pe-adult" /></label>
+        </div>
+        <div id="pe-list" class="pe-list"></div>
+      </aside>
+
+      <section class="ws-main pe-center">
+        <div id="pe-session" class="session-banner" hidden>
+          <i data-icon="pencil"></i>
+          <span id="pe-session-text"></span>
+          <span class="spacer"></span>
+          <button class="btn" id="pe-session-cancel">Cancel</button>
+          <button class="btn primary" id="pe-session-apply"><i data-icon="check"></i><span>Apply to panel</span></button>
+        </div>
+        <div class="toolbar">
+          <label class="seg-label">Group <select id="pe-group"><option value="1">Solo</option><option value="2">Pair (A + B)</option><option value="3">Trio (A + B + C)</option></select></label>
+          <span class="spacer"></span>
+          <button class="btn ghost" id="pe-mirror" title="Swap left and right"><i data-icon="mirror"></i><span>Mirror</span></button>
+          <button class="btn ghost" id="pe-reset" title="Reset to standing"><i data-icon="pose"></i><span>Stand</span></button>
+          <button class="btn ghost" id="pe-tpose" title="T-pose"><i data-icon="tpose"></i><span>T-pose</span></button>
+        </div>
+        <div class="pe-view"></div>
+        <p class="stage-hint">Click a blue joint, then drag its rotation rings. Drag empty space to orbit, scroll to zoom.</p>
+      </section>
+
+      <aside class="inspector" aria-label="Pose inspector">
+        <div class="ptabs" data-ptabs="poses">
+          <button data-pane="joint">Joint</button>
+          <button data-pane="props">Props</button>
+          <button data-pane="save">Save</button>
+        </div>
+        <div class="inspector-scroll">
+          <section data-ptab-group="poses" data-pane="joint">
+            <div class="list">
+              <label class="field">Figure <select id="pe-fig"><option value="0">A (red)</option><option value="1">B (blue)</option><option value="2">C (green)</option></select></label>
+              <label class="field">Bone <select id="pe-bone"></select></label>
+            </div>
+            <div class="pe-sliders">
+              <label class="slider">Bend (X) <input type="range" id="pe-r0" min="-180" max="180" step="1" /><output></output></label>
+              <label class="slider">Turn (Y) <input type="range" id="pe-r1" min="-180" max="180" step="1" /><output></output></label>
+              <label class="slider">Tilt (Z) <input type="range" id="pe-r2" min="-180" max="180" step="1" /><output></output></label>
+            </div>
+            <button class="btn" id="pe-zero"><i data-icon="reset"></i><span>Zero this bone</span></button>
+            <h3 class="group-title">Whole body</h3>
+            <div class="pe-sliders">
+              <label class="slider">Hip height <input type="range" id="pe-rooty" min="-0.5" max="0.5" step="0.005" /><output></output></label>
+              <label class="slider">Pitch <input type="range" id="pe-rr0" min="-180" max="180" step="1" /><output></output></label>
+              <label class="slider">Turn <input type="range" id="pe-rr1" min="-180" max="180" step="1" /><output></output></label>
+              <label class="slider">Roll <input type="range" id="pe-rr2" min="-180" max="180" step="1" /><output></output></label>
+            </div>
+            <div class="pe-offset" hidden>
+              <h3 class="group-title">Figure B placement</h3>
+              <div class="pe-sliders">
+                <label class="slider">Offset X <input type="range" id="pe-ox" min="-2" max="2" step="0.01" /><output></output></label>
+                <label class="slider">Offset Z <input type="range" id="pe-oz" min="-2" max="2" step="0.01" /><output></output></label>
+                <label class="slider">Facing <input type="range" id="pe-oyaw" min="-180" max="180" step="1" /><output></output></label>
+              </div>
+            </div>
+            <div class="pe-offsetc" hidden>
+              <h3 class="group-title">Figure C placement</h3>
+              <div class="pe-sliders">
+                <label class="slider">Offset X <input type="range" id="pe-ocx" min="-2" max="2" step="0.01" /><output></output></label>
+                <label class="slider">Offset Z <input type="range" id="pe-ocz" min="-2" max="2" step="0.01" /><output></output></label>
+                <label class="slider">Facing <input type="range" id="pe-ocyaw" min="-180" max="180" step="1" /><output></output></label>
+              </div>
+            </div>
+          </section>
+
+          <section data-ptab-group="poses" data-pane="props">
+            <div class="list">
+              <label class="field">Category <select id="pe-propcat"><option value="">All</option></select></label>
+              <label class="field">Prop <select id="pe-prop"></select></label>
+              <label class="field">Attach to <select id="pe-attach"><option value="rightHand">Right hand</option><option value="leftHand">Left hand</option><option value="body">Body</option></select></label>
+            </div>
+            <button class="btn" id="pe-addprop"><i data-icon="plus"></i><span>Add prop</span></button>
+            <div id="pe-props"></div>
+            <p class="hint">Position and rotation are relative to where the prop is attached.</p>
+          </section>
+
+          <section data-ptab-group="poses" data-pane="save">
+            <div class="list">
+              <label class="field">Id <input type="text" id="pe-id" spellcheck="false" /></label>
+              <label class="field">Name <input type="text" id="pe-name" /></label>
+              <label class="field">Category <input type="text" id="pe-metacat" /></label>
+              <label class="field">Layer <select id="pe-layer"><option value="full">Full body</option><option value="upper">Upper body (overlay)</option></select></label>
+              <label class="field">Tags <input type="text" id="pe-tags" placeholder="speak, listen" /></label>
+              <label class="field">Look weight <input type="number" id="pe-look" min="0" max="1" step="0.1" /></label>
+            </div>
+            <button class="btn primary block" id="pe-save"><i data-icon="save"></i><span>Save to library</span></button>
+            <div class="btn-row thirds">
+              <button class="btn" id="pe-copy"><i data-icon="copy"></i><span>Copy</span></button>
+              <button class="btn" id="pe-download"><i data-icon="download"></i><span>Download</span></button>
+              <label class="btn" tabindex="0"><i data-icon="upload"></i><span>Import</span><input type="file" id="pe-import" accept=".json" hidden /></label>
+            </div>
+            <p class="hint" id="pe-status"></p>
+            <p class="hint">Saved poses go to <code>poses/custom/</code> and appear in Shots and the MCP.</p>
+          </section>
+        </div>
+      </aside>
+    </main>
+
+    <!-- image-generation prompt export -->
+    <dialog id="ip-dialog" class="sheet">
+      <header class="sheet-head">
+        <div>
+          <h2>Image prompt</h2>
+          <p class="subtle">A reference image and a prompt for an image model such as GPT Image.</p>
+        </div>
+        <button class="icon-btn" id="ip-close" aria-label="Close"><i data-icon="x" data-size="18"></i></button>
+      </header>
+      <div class="ip-body">
+        <div class="ip-left">
+          <div class="seg" id="ip-scope"><button data-v="page" class="on">Whole page</button><button data-v="panel">Selected panel</button></div>
+          <div class="ip-ref"><img id="ip-ref" alt="Reference render" /></div>
+          <p class="hint" id="ip-size"></p>
+        </div>
+        <div class="ip-right">
+          <h3 class="group-title">Characters</h3>
+          <div id="ip-chars"></div>
+          <h3 class="group-title">Scene</h3>
+          <div class="list">
+            <label class="field ip-field">Setting <input type="text" id="ip-setting" placeholder="A cramped bakery kitchen before dawn" /></label>
+            <label class="field ip-field">Art style <input type="text" id="ip-style" placeholder="Black-and-white manga, screentones" /></label>
+            <label class="field switch-field">Leave balloons blank <input type="checkbox" class="switch" id="ip-blank" /></label>
+          </div>
+          <p class="hint">Empty fields become <code>{VARIABLES}</code> you can fill in later.</p>
+          <h3 class="group-title">Prompt</h3>
+          <textarea id="ip-prompt" rows="14" spellcheck="false"></textarea>
+        </div>
+      </div>
+      <footer class="sheet-foot">
+        <button class="btn" id="ip-dl-img"><i data-icon="png"></i><span>Reference PNG</span></button>
+        <button class="btn" id="ip-dl-txt"><i data-icon="download"></i><span>Prompt .txt</span></button>
+        <span class="spacer"></span>
+        <button class="btn primary" id="ip-copy"><i data-icon="copy"></i><span>Copy prompt</span></button>
+      </footer>
+    </dialog>
+
+    <!-- about -->
+    <dialog id="about-dialog" class="sheet about">
+      <header class="sheet-head">
+        <h2>About Koma</h2>
+        <button class="icon-btn" id="about-close" aria-label="Close"><i data-icon="x" data-size="18"></i></button>
+      </header>
+      <div class="about-body">
+        <img class="about-mark" src="/favicon.svg" width="64" height="64" alt="" />
+        <p class="about-lede"><i>Koma</i> (コマ) is Japanese for a comic panel. Koma turns a page layout into a storyboard: cameras, poses and lettering for every panel.</p>
+        <div class="about-item"><span class="about-ico"><i data-icon="grid" data-size="18"></i></span><div><b>Pages</b><p>Generates manga and comic page layouts in batches. Open a page to export it or storyboard it.</p></div></div>
+        <div class="about-item"><span class="about-ico"><i data-icon="board" data-size="18"></i></span><div><b>Shots</b><p>Gives every panel a camera that fits its shape and the scene's tone. Lock the panels you like and roll again for the rest. Uses mannequins or your own VRM models.</p></div></div>
+        <div class="about-item"><span class="about-ico"><i data-icon="pose" data-size="18"></i></span><div><b>Poses</b><p>Edit, combine and save poses for one, two or three characters, with props.</p></div></div>
+        <h3 class="group-title">Keyboard shortcuts</h3>
+        <dl class="shortcuts">
+          <div><dt><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd></dt><dd>Pages, Shots, Poses</dd></div>
+          <div><dt><kbd>R</kbd></dt><dd>Roll new camera plans</dd></div>
+          <div><dt><kbd>[</kbd><kbd>]</kbd></dt><dd>Previous / next proposal</dd></div>
+          <div><dt><kbd>Shift</kbd> click</dt><dd>Select several panels</dd></div>
+          <div><dt><kbd>Del</kbd></dt><dd>Delete selected panels</dd></div>
+          <div><dt><kbd>Ctrl</kbd><kbd>Z</kbd></dt><dd>Undo</dd></div>
+          <div><dt><kbd>Esc</kbd></dt><dd>Deselect, close sheets</dd></div>
+          <div><dt><kbd>↑</kbd><kbd>↓</kbd></dt><dd>Move through the pose library</dd></div>
+        </dl>
+        <p class="hint">Everything runs locally in your browser; VRM files are never uploaded. Built with <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a>, <a href="https://github.com/pixiv/three-vrm" target="_blank" rel="noopener">three-vrm</a> and <a href="https://lucide.dev" target="_blank" rel="noopener">Lucide</a> icons. Furniture and food models by <a href="https://kenney.nl" target="_blank" rel="noopener">Kenney</a> (CC0).</p>
+      </div>
+    </dialog>
+
+    <!-- slide-out sheet: storyboard layout + characters -->
+    <div id="drawer-backdrop" class="drawer-backdrop" hidden></div>
+    <aside id="drawer" class="drawer" aria-hidden="true" aria-label="Page setup">
+      <div class="drawer-head">
+        <div class="seg" id="drawer-tabs">
+          <button data-pane="layout"><i data-icon="layout"></i><span>Layout</span></button>
+          <button data-pane="chars"><i data-icon="users"></i><span>Cast</span></button>
+        </div>
+        <button class="icon-btn" id="drawer-close" title="Close" data-kbd="Esc" aria-label="Close"><i data-icon="x" data-size="18"></i></button>
+      </div>
+      <div class="drawer-body">
+        <section data-pane="layout">
+          <h3 class="group-title">Style</h3>
+          <div class="chips" id="sl-presets"></div>
+          <h3 class="group-title">Page</h3>
+          <div class="list">
+            <label class="field">Format <select id="sl-format"></select></label>
+            <label class="field">Reading <select id="sl-dir"><option value="rtl">Right to left</option><option value="ltr">Left to right</option></select></label>
+            <label class="field">Seed <input type="text" id="sl-seed" class="seed" spellcheck="false" /></label>
+            <div class="field">Layout no.
+              <span class="stepper">
+                <button id="sl-prev" aria-label="Previous layout"><i data-icon="left" data-size="15"></i></button>
+                <input type="number" id="sl-index" min="1" class="num" aria-label="Layout number" />
+                <button id="sl-next" aria-label="Next layout"><i data-icon="right" data-size="15"></i></button>
+              </span>
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn" id="sl-random"><i data-icon="shuffle"></i><span>Surprise me</span></button>
+            <button class="btn" id="sl-open"><i data-icon="external"></i><span>Open in Pages</span></button>
+          </div>
+        </section>
+
+        <section data-pane="chars">
+          <div class="row between">
+            <h3 class="group-title flush">Characters</h3>
+            <span class="cast-count" id="ch-count"></span>
+          </div>
+          <div id="ch-list"></div>
+          <p class="hint">Load a <code>.vrm</code> model (e.g. from VRoid Studio) for any character. Files stay in this browser and are never uploaded.</p>
+        </section>
+      </div>
+    </aside>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

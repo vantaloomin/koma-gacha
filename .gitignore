@@ -1,0 +1,28 @@
+﻿# Dependencies and builds
+node_modules/
+dist/
+.vite/
+
+# Your work (comics, exports and custom poses stay local)
+comics/
+poses/custom/
+export/
+
+# Tool output
+tools/*.png
+tools/*/
+*.log
+
+# Editors, OS and assistant files
+.claude/
+.mcp.json
+CLAUDE.md
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Environment
+.env
+.env.*
