@@ -90,6 +90,7 @@ function apiPage(c, page) {
       focus: p.focus != null && idx(p.focus) >= 0 ? idx(p.focus) : undefined,
       lock: p.lock && p.lock !== 'none' ? p.lock : undefined,
       spec: p.spec,
+      motion: p.motion,
       script: p.script ? {
         caption: p.script.caption,
         sfx: p.script.sfx,
@@ -127,9 +128,27 @@ function panelLines(c, page, panels) {
     return `  ${p.panel}. ${p.label}${shape} — ${p.score} pts${p.axisOk ? '' : ' (crosses the 180° axis!)'}${lock}${img}\n` +
       `     camera: ${TYPE_NAMES[p.spec.type]}, ${SIZE_KEYS[p.spec.size]}, subject ${page.cast[p.spec.subject] ?? '-'}, elev ${Math.round(p.spec.elev)}°, orbit ${Math.round(p.spec.az)}°, dutch ${Math.round(p.spec.dutch)}°` +
       (poseTxt || holdTxt ? `\n     poses: ${[poseTxt, holdTxt].filter(Boolean).join('; ')}` : '') +
+      (st.motion ? `\n     motion: ${motionText(page, st.motion)}` : '') +
       (weak ? `\n     weak: ${weak}` : '') +
       (lines.length ? '\n     ' + lines.join('\n     ') : '');
   }).join('\n');
+}
+
+function motionText(page, m) {
+  const bits = [];
+  if (m.duration) bits.push(`${m.duration}s`);
+  if (m.camera && m.camera !== 'auto') bits.push(`camera ${m.camera}`);
+  if (m.to?.camera) bits.push(`end camera ${Object.entries(m.to.camera).map(([k, v]) => `${k} ${typeof v === 'number' ? Math.round(v * 100) / 100 : v}`).join(', ')}`);
+  for (const [i, id] of Object.entries(m.to?.poses || {})) bits.push(`${page.cast[i]} → ${id || 'base pose'}`);
+  if (m.to && 'pair' in m.to) bits.push(m.to.pair ? `→ group ${m.to.pair.id}` : '→ no group pose');
+  for (const [i, mv] of Object.entries(m.to?.moves || {})) {
+    const parts = [mv.toward != null ? `toward ${page.cast[mv.toward]}` : '', mv.forward ? `forward ${mv.forward}m` : '', mv.side ? `side ${mv.side}m` : '', mv.turn ? `turn ${mv.turn}°` : ''].filter(Boolean);
+    bits.push(`${page.cast[i]} moves ${parts.join(' ')}`);
+  }
+  if (m.ease && m.ease !== 'inOut') bits.push(`ease ${m.ease}`);
+  if (m.start || (m.end != null && m.end !== 1)) bits.push(`moves ${Math.round((m.start || 0) * 100)}–${Math.round((m.end ?? 1) * 100)}%`);
+  if (m.transition && m.transition !== 'cut') bits.push(`${m.transition} in`);
+  return bits.join(', ') || 'still';
 }
 
 function pageHeader(c, n, page, total) {
@@ -358,10 +377,10 @@ const PANEL = z.number().int().min(1).describe('Panel number in reading order (1
 
 // ---------------------------------------------------------------- server
 
-const server = new McpServer({ name: 'koma-comics', version: '1.0.0' }, {
+const server = new McpServer({ name: 'koma-comics', version: '1.5.0' }, {
   instructions: `Make comics with the Koma engine (koma = comic panel).
 WORKFLOW: create_comic (characters with heights + descriptions) → add_page (cast, script per panel, layout) → review the preview → edit_panel / set_staging / roll_page to direct → render_page diagnostics=true to check → export_comic or export_image_prompt.
-CRAFT CHEAT SHEET (call guide for details: shots, layouts, pacing, acting, lettering, groups, workflow, image_prompts):
+CRAFT CHEAT SHEET (call guide for details: shots, layouts, pacing, acting, lettering, groups, workflow, video, image_prompts):
 - One beat per panel; 0–2 balloons and ~25 words per panel. Silent panels let emotion land.
 - Open a scene with an establishing shot; move closer as emotion rises.
 - Put the key moment in the biggest panel: layout.key_panel = N (bleed 'key' lets it run off the page).
@@ -371,7 +390,8 @@ CRAFT CHEAT SHEET (call guide for details: shots, layouts, pacing, acting, lette
 - Panel count by pacing: splash 1–3, action 3–5, dialogue 5–8, rapid back-and-forth 9–12 (grid/strips).
 - The gacha picks conversational gestures only; choose actions, emotions, props (hold) and group poses (pair a/b[/c]) deliberately.
 - Characters are colour-coded mannequins; give each a description so image prompts and generated art stay consistent.
-- Adult-pack poses need set_comic_options adult_content and adult characters (150 cm+).`,
+- Adult-pack poses need set_comic_options adult_content and adult characters (150 cm+).
+- Video: each panel is a shot's start keyframe; set_shot_motion adds the end keyframe (camera_move, end_poses, moves, end_pair) and length; preview_motion to check, export_video for MP4 + control videos (guide video).`,
 });
 
 const tool = (name, description, inputSchema, fn) => server.registerTool(name, { description, inputSchema }, async (args) => {
@@ -383,7 +403,7 @@ const tool = (name, description, inputSchema, fn) => server.registerTool(name, {
 });
 
 tool('guide', 'Visual-storytelling guidance for this tool: which shot, layout, pacing, pose or lettering choice to make and how to express it in the tool parameters. Call it when unsure how to direct a page.', {
-  topic: z.enum(TOPICS).optional().describe('overview (default), shots, layouts, pacing, acting, lettering, groups, workflow, image_prompts'),
+  topic: z.enum(TOPICS).optional().describe('overview (default), shots, layouts, pacing, acting, lettering, groups, workflow, video, image_prompts'),
 }, async (a) => ({ content: [text(GUIDE[a.topic || 'overview'])] }));
 
 tool('list_comics', 'List comic projects on disk.', {}, async () => {
@@ -923,6 +943,159 @@ tool('export_image_prompt', 'Export a page or one panel as an image-model packag
   const img = writeFile(c.id, 'export/prompts', `${base}-reference.png`, dataUrlToBuffer(r.png));
   const txt = writeFile(c.id, 'export/prompts', `${base}-prompt.txt`, r.prompt);
   return { content: [text(`Reference: ${img}\nPrompt: ${txt}\nSuggested output size: ${r.size}\n\n${r.prompt}`), imageContent(r.png)] };
+});
+
+// ---------------------------------------------------------------- video
+
+// End-keyframe poses, group poses and props go through the same checks as panel poses (incl. the adult gate).
+const motionCheckPage = (page, m) => ({ cast: page.cast, staging: {}, pairStaging: null, sceneProps: [], panels: [{ spec: { poses: m?.to?.poses, pair: m?.to?.pair, hold: m?.to?.hold } }] });
+const CAMERA_MOVES = ['auto', 'locked', 'pushIn', 'pullOut', 'orbitLeft', 'orbitRight', 'craneUp', 'craneDown', 'slideLeft', 'slideRight', 'dutch'];
+const VIDEO_SIZES = { '720p': [1280, 720], '1080p': [1920, 1080], vertical: [1080, 1920], square: [1080, 1080], scope: [1920, 816] };
+
+tool('set_shot_motion', 'Turn a panel into a moving shot for video: the panel is the start keyframe, and this sets the end keyframe (camera move, end poses, group pose, held props, character moves), the shot\'s length, easing and the transition into it. Every frame in between is blended. Returns a strip of frames through the shot.', {
+  comic_id: ID, page: PAGE, panel: PANEL,
+  duration: z.number().min(0.5).max(30).optional().describe('Seconds on screen (default: from the script\'s reading time, 2–10 s)'),
+  camera_move: z.enum(CAMERA_MOVES).optional().describe('auto = frame the end keyframe (follows the action); locked = camera stays put; or pushIn, pullOut, orbitLeft/Right, craneUp/Down, slideLeft/Right, dutch'),
+  end_camera: CameraZ.optional().describe('Absolute end-camera settings (applied after camera_move)'),
+  end_poses: z.record(z.string(), z.string().nullable()).optional().describe('Character name -> pose id at the end of the shot (null = back to the base pose)'),
+  end_pair: z.object({ pose: z.string(), a: z.string(), b: z.string(), c: z.string().optional() }).nullable().optional().describe('Group pose at the end (e.g. step into a hug); null removes one'),
+  end_hold: z.record(z.string(), z.object({ left: z.string().nullable().optional(), right: z.string().nullable().optional() })).optional().describe('Props in hand at the end (props swap halfway through)'),
+  moves: z.record(z.string(), z.object({
+    toward: z.string().optional().describe('Walk toward this character…'),
+    gap: z.number().min(0.2).max(3).optional().describe('…stopping this far away (m, default 0.55)'),
+    forward: z.number().min(-6).max(6).optional().describe('Metres along their facing (negative = back away)'),
+    side: z.number().min(-6).max(6).optional().describe('Metres to their own left (+) or right (-)'),
+    turn: z.number().min(-180).max(180).optional().describe('Degrees to turn (+ = to their left)'),
+  })).optional().describe('Character name -> where they move during the shot (relative to where they start)'),
+  ease: z.enum(['inOut', 'linear', 'in', 'out']).optional(),
+  timing: z.object({ start: z.number().min(0).max(1), end: z.number().min(0).max(1) }).optional().describe('When the move happens, as fractions of the shot (default 0–1); e.g. 0.3–0.8 holds still first'),
+  transition: z.enum(['cut', 'dissolve', 'fade']).optional().describe('How this shot starts (from the previous one)'),
+  clear: z.boolean().optional().describe('Remove all motion from this panel first'),
+  preview_frames: z.number().int().min(1).max(6).optional().describe('Frames in the returned strip (default 4)'),
+}, async (a) => {
+  const c = load(a.comic_id);
+  const page = getPage(c, a.page);
+  const p = getPanel(page, a.panel);
+  const idx = (name) => {
+    const i = page.cast.findIndex((n) => n.toLowerCase() === String(name).toLowerCase());
+    if (i < 0) throw new Error(`${name} isn't in this page's cast (${page.cast.join(', ')}).`);
+    return i;
+  };
+  if (!p.spec) {
+    const r = await engine.call('scorePage', { page: apiPage(c, page), chars: apiChars(c, page) });
+    r.panels.forEach((x, i) => { if (page.panels[i] && !page.panels[i].spec) page.panels[i].spec = x.spec; });
+  }
+  const m = a.clear || !p.motion ? {} : { ...p.motion, to: { ...(p.motion.to || {}) } };
+  m.to = m.to || {};
+  if (a.duration != null) m.duration = a.duration;
+  if (a.camera_move) m.camera = a.camera_move;
+  if (a.ease) m.ease = a.ease;
+  if (a.transition) m.transition = a.transition;
+  if (a.timing) { m.start = Math.min(a.timing.start, a.timing.end); m.end = Math.max(a.timing.start, a.timing.end); }
+  if (a.end_camera) {
+    const e = a.end_camera;
+    const cam = { ...(m.to.camera || {}) };
+    if (e.shot_type) cam.type = TYPE_KEYS[e.shot_type];
+    if (e.size) cam.size = SIZE_KEYS.indexOf(e.size);
+    if (e.subject) cam.subject = idx(e.subject);
+    if (e.other) cam.other = idx(e.other);
+    if (e.elevation != null) cam.elev = e.elevation;
+    if (e.orbit != null) cam.az = e.orbit;
+    if (e.dutch != null) cam.dutch = e.dutch;
+    if (e.fov != null) cam.fov = e.fov;
+    if (e.frame_x != null) cam.fx = e.frame_x;
+    if (e.frame_y != null) cam.fy = e.frame_y;
+    m.to.camera = cam;
+  }
+  if (a.end_poses) {
+    m.to.poses = { ...(m.to.poses || {}) };
+    for (const [name, id] of Object.entries(a.end_poses)) m.to.poses[idx(name)] = id;
+  }
+  if (a.end_pair !== undefined) m.to.pair = a.end_pair ? { id: a.end_pair.pose, a: idx(a.end_pair.a), b: idx(a.end_pair.b), ...(a.end_pair.c ? { c: idx(a.end_pair.c) } : {}) } : null;
+  if (a.end_hold) {
+    const base = m.to.hold || p.spec.hold || {};
+    m.to.hold = { ...base };
+    for (const [name, h] of Object.entries(a.end_hold)) {
+      const i = idx(name);
+      const cur = { ...(m.to.hold[i] || {}) };
+      if (h.left !== undefined) cur.left = h.left || undefined;
+      if (h.right !== undefined) cur.right = h.right || undefined;
+      m.to.hold[i] = cur;
+    }
+  }
+  if (a.moves) {
+    m.to.moves = { ...(m.to.moves || {}) };
+    for (const [name, mv] of Object.entries(a.moves)) {
+      const out = { ...mv };
+      if (mv.toward) out.toward = idx(mv.toward);
+      m.to.moves[idx(name)] = out;
+    }
+  }
+  if (!Object.keys(m.to).length) delete m.to;
+  p.motion = Object.keys(m).length ? m : undefined;
+  await checkPoses(c, motionCheckPage(page, p.motion));
+  save(c);
+  const r = await engine.call('motionStrip', { page: apiPage(c, page), chars: apiChars(c, page), panels: [a.panel - 1], frames: a.preview_frames || 4, renderStyle: page.renderStyle });
+  const secs = r.clips[0]?.seconds;
+  return { content: [text(`Page ${a.page}, panel ${a.panel}: ${p.motion ? motionText(page, p.motion) : 'still'} (${secs}s on screen). Frames run left to right from the start to the end of the shot.`), imageContent(r.png)] };
+});
+
+tool('preview_motion', 'Check a page\'s shots as video without encoding: one row of frames per panel, from the start to the end of each shot.', {
+  comic_id: ID, page: PAGE,
+  frames: z.number().int().min(1).max(6).optional().describe('Frames per shot (default 3)'),
+}, async (a) => {
+  const c = load(a.comic_id);
+  const page = getPage(c, a.page);
+  const r = await engine.call('motionStrip', { page: apiPage(c, page), chars: apiChars(c, page), frames: a.frames || 3, thumb: 240, renderStyle: page.renderStyle });
+  const total = r.clips.reduce((s, x) => s + x.seconds, 0);
+  return { content: [text(`Page ${a.page}: ${r.clips.length} shots, ${total.toFixed(1)} s.\n${r.clips.map((x) => `  ${x.panel}. ${x.seconds}s — ${page.panels[x.panel - 1]?.motion ? motionText(page, page.panels[x.panel - 1].motion) : 'still'}`).join('\n')}`), imageContent(r.png)] };
+});
+
+tool('export_video', 'Render pages as an MP4 animatic: every panel becomes a shot (reading order), moving where set_shot_motion added keyframes, with subtitles or balloons. Optionally also writes matching control videos (depth, line art, OpenPose skeleton) for AI video models such as Wan VACE in ComfyUI, plus a shot list.', {
+  comic_id: ID,
+  pages: z.array(z.number().int().min(1)).optional().describe('Page numbers in order (default: every page)'),
+  size: z.enum(Object.keys(VIDEO_SIZES)).optional().describe('720p (default), 1080p, vertical 9:16, square, scope 2.35:1'),
+  fps: z.union([z.literal(12), z.literal(24), z.literal(30)]).optional().describe('Default 24'),
+  lettering: z.enum(['subtitles', 'balloons', 'none']).optional().describe('Default subtitles'),
+  drift: z.number().min(0).max(0.2).optional().describe('Slow push-in on still shots, as a fraction of camera distance (default 0.04; 0 = static)'),
+  page_transition: z.enum(['cut', 'dissolve', 'fade']).optional().describe('Between pages (default cut)'),
+  controls: z.array(z.enum(['depth', 'lineart', 'pose'])).optional().describe('Also write these control videos (no lettering, hard cuts)'),
+}, async (a) => {
+  const c = load(a.comic_id);
+  const nums = a.pages?.length ? a.pages : c.pages.map((_, i) => i + 1);
+  const pages = [];
+  for (const n of nums) {
+    const page = getPage(c, n);
+    await checkPoses(c, page);
+    for (const p of page.panels) if (p.motion?.to) await checkPoses(c, motionCheckPage(page, p.motion));
+    pages.push({ page: apiPage(c, page), chars: apiChars(c, page), pageNumber: n });
+  }
+  const [w, h] = VIDEO_SIZES[a.size || '720p'];
+  const kinds = ['render', ...(a.controls || [])];
+  const r = await engine.call('renderVideo', {
+    pages, width: w, height: h, fps: a.fps || 24, kinds, lettering: a.lettering || 'subtitles',
+    drift: a.drift ?? 0.04, caps: c.caps !== false, pageTransition: a.page_transition || 'cut',
+  });
+  const span = nums.length === c.pages.length ? 'all' : nums.length === 1 ? `p${pad(nums[0])}` : `p${pad(nums[0])}-${pad(nums[nums.length - 1])}`;
+  const base = `${c.id}-${span}`;
+  const files = [];
+  for (const [kind, b64] of Object.entries(r.videos)) files.push(writeFile(c.id, 'export/video', `${base}${kind === 'render' ? '' : `-${kind}`}.mp4`, Buffer.from(b64, 'base64')));
+  // shot list: timing + camera description per shot (handy as prompts for video models)
+  const desc = {};
+  for (const n of [...new Set(r.clips.map((x) => x.page))]) {
+    const page = getPage(c, n);
+    const s = await engine.call('scorePage', { page: apiPage(c, page), chars: apiChars(c, page) });
+    desc[n] = s.panels;
+  }
+  const fmt = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(2).padStart(5, '0')}`;
+  const shotList = r.clips.map((x) => {
+    const st = getPage(c, x.page).panels[x.panel - 1];
+    const lines = (st.script?.dialogue || []).map((d) => `${d.speaker ?? 'Narration'}: "${d.text}"`);
+    if (st.script?.caption) lines.unshift(`Caption: "${st.script.caption}"`);
+    return `${fmt(x.start)}–${fmt(x.end)}  page ${x.page} panel ${x.panel}${x.transition !== 'cut' ? ` (${x.transition} in)` : ''}\n  ${desc[x.page]?.[x.panel - 1]?.description || ''}\n  motion: ${st.motion ? motionText(getPage(c, x.page), st.motion) : 'still'}${lines.length ? '\n  ' + lines.join('\n  ') : ''}`;
+  }).join('\n\n');
+  files.push(writeFile(c.id, 'export/video', `${base}-shots.txt`, `${c.title} — ${r.seconds}s at ${r.fps} fps, ${r.width}x${r.height}\n\n${shotList}\n`));
+  return { content: [text(`Wrote ${r.seconds}s of video (${r.width}x${r.height}, ${r.fps} fps, ${r.codec}), ${r.clips.length} shots:\n${files.map((f) => '  ' + f).join('\n')}`)] };
 });
 
 tool('reload_renderer', 'Reload the headless renderer to pick up edits to the project source.', {}, async () => {

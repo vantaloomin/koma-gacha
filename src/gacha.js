@@ -214,8 +214,13 @@ function toPanel(v, cam) {
 // Screen-space facts about each person in a shot.
 export function analyzeShot(spec, world, aspect, ctx) {
   const { camera, sideOk, world: W } = computeCamera(spec, world, aspect, ctx);
+  return { camera, sideOk, people: analyzeCamera(camera, W, ctx) };
+}
+
+// Screen-space facts for an already-posed world seen through any camera (also used for motion frames).
+export function analyzeCamera(camera, W, ctx) {
   const camPos = camera.position;
-  const people = W.people.map((p) => {
+  return W.people.map((p) => {
     const dir = p.headFwd;
     const c = toPanel(p.head, camera);
     const top = toPanel(p.head.clone().add(new THREE.Vector3(0, p.r * 1.15, 0)), camera);
@@ -234,9 +239,8 @@ export function analyzeShot(spec, world, aspect, ctx) {
     const body = { u0, u1, v0: Math.max(v0, Math.min(v1, c.v + rv * 0.8)), v1 };
     const depth = camPos.distanceTo(p.head);
     const inFrame = !c.behind && c.u > -0.02 && c.u < 1.02 && c.v > -0.02 && c.v < 1.02 && visibleAt(clamp01(c.u), clamp01(c.v), ctx);
-    return { i: p.i, u: c.u, v: c.v, rv, ru: rv / aspect, gaze: { du: tip.u - c.u, dv: tip.v - c.v }, faceVis, body, depth, inFrame, behind: c.behind, topV: c.v - rv * 1.1, gazeInfo: { dir } };
+    return { i: p.i, u: c.u, v: c.v, rv, ru: rv / camera.aspect, gaze: { du: tip.u - c.u, dv: tip.v - c.v }, faceVis, body, depth, inFrame, behind: c.behind, topV: c.v - rv * 1.1, gazeInfo: { dir } };
   });
-  return { camera, sideOk, people };
 }
 
 // --- scoring --------------------------------------------------------------

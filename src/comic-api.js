@@ -18,6 +18,8 @@ import { StoryRenderer, drawPage } from './renderer.js';
 import { letterPanel, FONT } from './letter.js';
 import { printGeometry, drawCropMarks } from './print.js';
 import { buildImagePrompt, suggestedSize } from './prompt-export.js';
+import { VideoComposer } from './video.js';
+import { defaultDuration, hasMotion } from './motion.js';
 
 const sr = new StoryRenderer();
 const figCache = new Map();
@@ -495,6 +497,91 @@ const ComicAPI = {
     }
     return out;
   },
+
+  // ---------------------------------------------------------------- video
+
+  /**
+   * Animatic / control videos for a run of pages. pages: [{page, chars, pageNumber}].
+   * kinds: any of render, depth, lineart, pose. Returns base64 MP4s plus the clip timings.
+   */
+  async renderVideo({ pages, width = 1280, height = 720, fps = 24, kinds = ['render'], lettering = 'subtitles', drift = 0.04, caps = true, pageTransition = 'cut', renderStyle, panels = null }) {
+    const composer = await buildComposer({ pages, width, height, lettering, drift, caps, pageTransition, renderStyle, panels });
+    const out = {};
+    let codec = null;
+    for (const kind of kinds) {
+      const r = await composer.encode({ kind, fps });
+      codec = r.codec;
+      out[kind] = await blobToBase64(r.blob);
+    }
+    const tl = composer.timeline;
+    return {
+      videos: out, codec, fps, width: composer.width, height: composer.height, seconds: +tl.total.toFixed(2),
+      clips: tl.clips.map((c) => ({ page: c.pageNumber, panel: c.panel + 1, start: +c.t0.toFixed(2), end: +c.t1.toFixed(2), moving: hasMotion(c.motion), transition: c.transition })),
+    };
+  },
+
+  // A strip of frames through one shot (or each shot of a page) so motion can be checked without a video.
+  async motionStrip({ page, chars, panels = null, frames = 3, width = 1280, height = 720, thumb = 320, lettering = 'subtitles', renderStyle }) {
+    const composer = await buildComposer({ pages: [{ page, chars, pageNumber: 1 }], width, height, lettering, drift: 0.04, caps: true, pageTransition: 'cut', renderStyle, panels });
+    const clips = composer.timeline.clips;
+    const th = Math.round((thumb * composer.height) / composer.width);
+    const c = canvas(frames * (thumb + 8) + 8 + 40, clips.length * (th + 8) + 8);
+    const g = c.getContext('2d');
+    g.fillStyle = '#e9ebef';
+    g.fillRect(0, 0, c.width, c.height);
+    const frame = canvas(composer.width, composer.height);
+    const fg = frame.getContext('2d');
+    clips.forEach((clip, r) => {
+      g.fillStyle = '#222';
+      g.font = '600 14px system-ui, sans-serif';
+      g.fillText(String(clip.panel + 1), 12, 8 + r * (th + 8) + th / 2 + 5);
+      for (let k = 0; k < frames; k++) {
+        const u = frames === 1 ? 0 : k / (frames - 1);
+        const t = clip.t0 + Math.min(clip.duration - 0.001, u * clip.duration);
+        composer.drawFrame(fg, t, 'render');
+        g.drawImage(frame, 40 + k * (thumb + 8), 8 + r * (th + 8), thumb, th);
+      }
+    });
+    return { png: c.toDataURL('image/jpeg', 0.86), clips: clips.map((cl) => ({ panel: cl.panel + 1, seconds: cl.duration })) };
+  },
 };
+
+async function blobToBase64(blob) {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
+// Clips for every panel of every page, in reading order. Panel motion lives in page.panels[i].motion:
+// {duration, ease, start, end, camera, transition, to: {camera, poses, pair, hold, moves}}.
+async function buildComposer({ pages, width, height, lettering, drift, caps, pageTransition, renderStyle, panels }) {
+  const composer = new VideoComposer(sr, { width, height, lettering, drift, caps });
+  composer.setSize(width, height);
+  const clips = [];
+  for (let pi = 0; pi < pages.length; pi++) {
+    const { page, chars, pageNumber } = pages[pi];
+    const style = renderStyle || page.renderStyle || 'shaded';
+    const ctx = await setup(page, chars, style);
+    const prop = currentShots(page, ctx);
+    const figs = await getFigures(chars);
+    const setupFn = () => { sr.setFigures(figs, chars); sr.setStyle(style, chars); };
+    composer.opts.dir = ctx.layout.dir || 'ltr';
+    prop.shots.forEach((shot, i) => {
+      if (panels && !panels.includes(i)) return;
+      const p = page.panels?.[i] || {};
+      const m = p.motion || null;
+      const first = clips.length === 0;
+      const pageStart = !first && clips[clips.length - 1].pageNumber !== pageNumber;
+      clips.push({
+        shot, world: ctx.world, script: p.script, motion: m, chars, setup: setupFn, pageNumber, panel: i,
+        duration: m?.duration || defaultDuration(p.script, shot.ctx.role),
+        transition: m?.transition || (pageStart ? pageTransition : 'cut'),
+      });
+    });
+  }
+  composer.setClips(clips);
+  return composer;
+}
 
 window.ComicAPI = ComicAPI;

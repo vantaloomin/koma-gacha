@@ -33,6 +33,7 @@
         <button class="tab" data-tab="layout" role="tab" data-tip="Pages" data-kbd="1"><i data-icon="grid"></i><span>Pages</span></button>
         <button class="tab" data-tab="story" role="tab" data-tip="Shots" data-kbd="2"><i data-icon="board"></i><span>Shots</span></button>
         <button class="tab" data-tab="poses" role="tab" data-tip="Poses" data-kbd="3"><i data-icon="pose"></i><span>Poses</span></button>
+        <button class="tab" data-tab="video" role="tab" data-tip="Video" data-kbd="4"><i data-icon="film"></i><span>Video</span></button>
       </nav>
       <div class="appbar-end">
         <button class="icon-btn" id="theme-toggle" data-menu="theme-menu" aria-label="Appearance"></button>
@@ -332,6 +333,76 @@
       </aside>
     </main>
 
+    <!-- ===================== VIDEO TAB ===================== -->
+    <main id="tab-video" class="tabpage ws ws-video" hidden>
+      <div class="toolbar video-toolbar">
+        <div class="toolbar-title">
+          <h1>Video</h1>
+          <span class="subtle" id="vd-summary"></span>
+        </div>
+        <div class="toolbar-end">
+          <button class="btn" data-menu="vd-export-menu"><i data-icon="download"></i><span>Export</span><i data-icon="down" data-size="14"></i></button>
+          <div id="vd-export-menu" class="menu" popover role="menu">
+            <button data-export="render" role="menuitem"><i data-icon="film"></i><span>Animatic MP4<small>Storyboard render with lettering</small></span></button>
+            <hr />
+            <button data-export="depth" role="menuitem"><i data-icon="layers"></i><span>Depth MP4<small>Control video, white = near</small></span></button>
+            <button data-export="lineart" role="menuitem"><i data-icon="pencil"></i><span>Line art MP4<small>Control video</small></span></button>
+            <button data-export="pose" role="menuitem"><i data-icon="pose"></i><span>OpenPose MP4<small>Skeletons for pose control</small></span></button>
+            <button data-export="all" role="menuitem"><i data-icon="download"></i><span>All four<small>Same timing, one after another</small></span></button>
+            <hr />
+            <button data-export="shots" role="menuitem"><i data-icon="json"></i><span>Shot list<small>Timings and camera notes, .txt</small></span></button>
+          </div>
+          <button class="btn primary" id="vd-play" data-kbd="Space" title="Play"><i data-icon="play"></i><span>Play</span></button>
+        </div>
+      </div>
+
+      <section class="stage video-stage" id="vd-stage">
+        <div class="video-wrap">
+          <div class="video-frame">
+            <canvas id="vd-canvas" aria-label="Video preview"></canvas>
+            <div id="vd-busy" class="video-busy" hidden>
+              <b id="vd-busy-title">Exporting</b>
+              <div class="bar"><i id="vd-busy-bar"></i></div>
+              <span class="subtle" id="vd-busy-text"></span>
+              <button class="btn" id="vd-busy-cancel">Cancel</button>
+            </div>
+          </div>
+        </div>
+        <div class="transport">
+          <button class="icon-btn" id="vd-start" title="Back to the start" aria-label="Back to the start"><i data-icon="skipBack" data-size="18"></i></button>
+          <span class="vd-time" id="vd-time">0:00.0</span>
+          <input type="range" id="vd-scrub" min="0" max="1000" step="1" value="0" aria-label="Playhead" />
+          <span class="vd-time dim" id="vd-total">0:00.0</span>
+          <button class="icon-btn on" id="vd-loop" title="Loop" aria-label="Loop" aria-pressed="true"><i data-icon="repeat" data-size="18"></i></button>
+        </div>
+        <div class="timeline-wrap">
+          <div class="timeline" id="vd-timeline"></div>
+        </div>
+      </section>
+
+      <aside class="inspector" aria-label="Shot inspector">
+        <div class="ptabs" data-ptabs="video">
+          <button data-pane="shot">Shot</button>
+          <button data-pane="output">Output</button>
+        </div>
+        <div class="inspector-scroll">
+          <section data-ptab-group="video" data-pane="shot">
+            <div id="vd-inspector"></div>
+          </section>
+          <section data-ptab-group="video" data-pane="output">
+            <div class="list first">
+              <label class="field">Size <select id="vd-size"></select></label>
+              <label class="field">Frame rate <select id="vd-fps"><option value="12">12 fps</option><option value="24">24 fps</option><option value="30">30 fps</option></select></label>
+              <label class="field">Lettering <select id="vd-lettering"></select></label>
+              <label class="slider">Drift on still shots <input type="range" id="vd-drift" min="0" max="0.15" step="0.01" /><output></output></label>
+            </div>
+            <p class="hint">Each panel becomes a shot, in reading order. Its camera is reframed for the video size, so the same storyboard works at 16:9, 9:16 or square.</p>
+            <p class="hint">Control videos (depth, line art, OpenPose) have the same timing as the animatic, with hard cuts and no lettering, for AI video models such as Wan VACE in ComfyUI.</p>
+          </section>
+        </div>
+      </aside>
+    </main>
+
     <!-- image-generation prompt export -->
     <dialog id="ip-dialog" class="sheet">
       <header class="sheet-head">
@@ -381,9 +452,12 @@
         <div class="about-item"><span class="about-ico"><i data-icon="grid" data-size="18"></i></span><div><b>Pages</b><p>Generates manga and comic page layouts in batches. Open a page to export it or storyboard it.</p></div></div>
         <div class="about-item"><span class="about-ico"><i data-icon="board" data-size="18"></i></span><div><b>Shots</b><p>Gives every panel a camera that fits its shape and the scene's tone. Lock the panels you like and roll again for the rest. Uses mannequins or your own VRM models.</p></div></div>
         <div class="about-item"><span class="about-ico"><i data-icon="pose" data-size="18"></i></span><div><b>Poses</b><p>Edit, combine and save poses for one, two or three characters, with props.</p></div></div>
+        <div class="about-item"><span class="about-ico"><i data-icon="film" data-size="18"></i></span><div><b>Video</b><p>Turns the storyboard into an animatic: every panel becomes a timed shot, and an end keyframe can move the camera, the poses and the characters. Exports MP4 plus control videos for AI video models.</p></div></div>
         <h3 class="group-title">Keyboard shortcuts</h3>
         <dl class="shortcuts">
-          <div><dt><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd></dt><dd>Pages, Shots, Poses</dd></div>
+          <div><dt><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>4</kbd></dt><dd>Pages, Shots, Poses, Video</dd></div>
+          <div><dt><kbd>Space</kbd></dt><dd>Play / pause the video</dd></div>
+          <div><dt><kbd>←</kbd><kbd>→</kbd></dt><dd>Step a frame in the video (Shift: a second)</dd></div>
           <div><dt><kbd>R</kbd></dt><dd>Roll new camera plans</dd></div>
           <div><dt><kbd>[</kbd><kbd>]</kbd></dt><dd>Previous / next proposal</dd></div>
           <div><dt><kbd>Shift</kbd> click</dt><dd>Select several panels</dd></div>

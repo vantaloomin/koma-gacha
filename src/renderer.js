@@ -91,26 +91,34 @@ export class StoryRenderer {
   renderGuide(shot, world, w, h, kind, chars) {
     w = Math.max(2, Math.round(w));
     h = Math.max(2, Math.round(h));
-    this.renderer.setSize(w, h, false);
     const { camera } = computeCamera(shot.spec, world, w / h, shot.ctx);
-    this.poseFigures(shot.spec, world, shot.ctx);
+    const W = posedWorld(world, shot.spec, shot.ctx);
+    return this.renderPosed(W, shot.ctx, camera, w, h, kind, chars);
+  }
+
+  // Render an already-posed world through a given camera (motion frames use this too).
+  // kind: 'render' (current style), 'depth', 'lineart', 'silhouette'.
+  renderPosed(W, ctx, camera, w, h, kind = 'render', chars = null) {
+    w = Math.max(2, Math.round(w));
+    h = Math.max(2, Math.round(h));
+    this.renderer.setSize(w, h, false);
+    this.poseFigures(null, W, ctx);
     const prevStyle = this.style;
     const prevBg = this.scene.background;
     const floorVis = this.floor.visible;
     if (kind === 'depth') {
       let near = Infinity;
       let far = 0;
-      for (const p of world.people) {
+      for (const p of W.people) {
         const d = camera.position.distanceTo(p.head);
         near = Math.min(near, d);
         far = Math.max(far, d);
       }
-      camera.near = Math.max(0.05, near - 1.2);
-      camera.far = far + 2.5;
-      camera.updateProjectionMatrix();
-      camera.projectionMatrix.elements[8] = -shot.spec.fx;
-      camera.projectionMatrix.elements[9] = -shot.spec.fy;
-      this.scene.overrideMaterial = this.depthMat || (this.depthMat = new THREE.MeshDepthMaterial());
+      // linear depth, white = near: the nearest head a bit in front, fading out behind the farthest
+      const mat = this.depthMat || (this.depthMat = linearDepthMaterial());
+      mat.uniforms.uNear.value = Math.max(0.05, near - 0.9);
+      mat.uniforms.uFar.value = far + 2.2;
+      this.scene.overrideMaterial = mat;
       this.scene.background = new THREE.Color(0x000000);
       this.floor.visible = false;
     } else if (kind === 'lineart' || kind === 'silhouette') {
@@ -147,6 +155,34 @@ export class StoryRenderer {
     this.renderer.render(this.scene, camera);
     return this.renderer.domElement;
   }
+}
+
+// Depth for ControlNet-style guides: linear in view distance between uNear (white) and uFar (black).
+function linearDepthMaterial() {
+  return new THREE.ShaderMaterial({
+    uniforms: { uNear: { value: 0.5 }, uFar: { value: 10 } },
+    vertexShader: `
+      #include <common>
+      #include <skinning_pars_vertex>
+      #include <morphtarget_pars_vertex>
+      varying float vViewZ;
+      void main() {
+        #include <skinbase_vertex>
+        #include <begin_vertex>
+        #include <morphtarget_vertex>
+        #include <skinning_vertex>
+        #include <project_vertex>
+        vViewZ = -mvPosition.z;
+      }`,
+    fragmentShader: `
+      uniform float uNear;
+      uniform float uFar;
+      varying float vViewZ;
+      void main() {
+        float d = clamp((uFar - vViewZ) / (uFar - uNear), 0.0, 1.0);
+        gl_FragColor = vec4(vec3(d), 1.0);
+      }`,
+  });
 }
 
 // --- page drawing ---------------------------------------------------------

@@ -4,7 +4,7 @@ import {
   Image as ImageIcon, Link, FileJson, Printer, FileImage, Users, X, RotateCcw, Plus, Lock, LockOpen, Pencil, Check, ChevronDown,
   ChevronLeft, ChevronRight, Search, Sparkles, Copy, Upload, FlipHorizontal2, Save, Camera, Map as MapIcon, Eye, Gauge,
   SlidersHorizontal, Shuffle, ExternalLink, MousePointerClick, Columns2, Square, PanelsTopLeft, FileCode, Accessibility,
-  Package, CircleCheck, TriangleAlert, Wand2, Type,
+  Package, CircleCheck, TriangleAlert, Wand2, Type, Film, Play, Pause, Repeat, SkipBack, Move, Layers,
 } from 'lucide';
 
 const ICONS = {
@@ -15,7 +15,8 @@ const ICONS = {
   sparkles: Sparkles, copy: Copy, upload: Upload, mirror: FlipHorizontal2, save: Save, camera: Camera, map: MapIcon,
   eye: Eye, gauge: Gauge, sliders: SlidersHorizontal, shuffle: Shuffle, external: ExternalLink, click: MousePointerClick,
   compare: Columns2, single: Square, layout: PanelsTopLeft, tpose: Accessibility, prop: Package, ok: CircleCheck,
-  warn: TriangleAlert, wand: Wand2, type: Type,
+  warn: TriangleAlert, wand: Wand2, type: Type, film: Film, play: Play, pause: Pause, repeat: Repeat,
+  skipBack: SkipBack, move: Move, layers: Layers,
 };
 
 export function icon(name, size = 16) {

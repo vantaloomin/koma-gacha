@@ -711,3 +711,44 @@ kbd { display: inline-flex; align-items: center; justify-content: center; min-wi
 /* compare: cards show at once; each page fades in as it renders */
 .compare-grid canvas { background: #fff; transition: opacity 0.22s var(--ease-out); }
 .compare-grid canvas.pending { opacity: 0.35; }
+
+/* ------------------------------------------------------------ video */
+
+.ws-video { grid-template-columns: minmax(0, 1fr) 360px; grid-template-rows: auto minmax(0, 1fr); }
+.video-toolbar { grid-column: 1 / -1; }
+.video-stage { display: flex; flex-direction: column; overflow: hidden; }
+.video-wrap { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 24px 32px 12px; }
+.video-frame { position: relative; line-height: 0; max-width: 100%; max-height: 100%; }
+#vd-canvas { display: block; border-radius: 4px; background: #fff; box-shadow: var(--page-shadow); }
+.video-busy { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; line-height: 1.4;
+  border-radius: 4px; background: color-mix(in srgb, var(--surface) 86%, transparent); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.video-busy b { font-size: 14px; font-weight: 600; }
+.video-busy .bar { width: min(320px, 70%); height: 6px; border-radius: 3px; background: var(--track); overflow: hidden; }
+.video-busy .bar i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 3px; transition: width 0.12s linear; }
+.transport { display: flex; align-items: center; gap: 10px; padding: 4px 24px 8px; }
+.transport input[type='range'] { flex: 1; }
+.vd-time { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--text); min-width: 52px; }
+.vd-time.dim { color: var(--text-2); text-align: right; }
+.icon-btn.on { color: var(--accent-text); background: var(--accent-soft); }
+.timeline-wrap { flex: none; overflow-x: auto; padding: 4px 24px 18px; }
+.timeline { position: relative; display: flex; gap: 4px; min-width: min-content; padding-top: 2px; }
+.vclip { flex: none; display: flex; flex-direction: column; align-items: stretch; gap: 5px; height: auto; padding: 4px; border-radius: 9px; background: var(--surface); color: var(--text-2);
+  box-shadow: 0 0 0 1px var(--line); font-size: 11.5px; font-weight: 500; text-align: left; overflow: hidden; }
+.vclip:hover { background: var(--surface); box-shadow: 0 0 0 1px var(--line-strong); }
+.vclip.on { box-shadow: 0 0 0 2px var(--accent); color: var(--text); }
+.vclip canvas { display: block; width: 100%; height: 56px; object-fit: cover; border-radius: 5px; background: #fff; }
+.vclip .cap { display: flex; align-items: center; gap: 5px; padding: 0 2px 1px; white-space: nowrap; overflow: hidden; font-variant-numeric: tabular-nums; }
+.vclip .cap b { color: var(--text); font-weight: 650; }
+.vclip .cap .ico { color: var(--accent-text); flex: none; }
+.vclip .cap .tr { margin-left: auto; color: var(--text-3); }
+.playhead { position: absolute; top: -2px; bottom: -2px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--bad); pointer-events: none; z-index: 2; }
+.vd-actions { display: flex; gap: 8px; margin: 12px 0 0; }
+.vd-actions .btn { flex: 1; }
+.vd-cast { border-top: 1px solid var(--line); padding-top: 4px; margin-top: 6px; }
+.vd-cast:first-child { border-top: 0; margin-top: 0; }
+.vd-cast h4 { display: flex; align-items: center; gap: 7px; margin: 8px 0 2px; font-size: 12.5px; font-weight: 600; }
+.vd-cast h4 i { width: 9px; height: 9px; border-radius: 50%; }
+@media (max-width: 960px) {
+  .video-stage { order: 1; overflow: visible; }
+  .video-wrap { padding: 16px; }
+}

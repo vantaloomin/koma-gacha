@@ -19,6 +19,7 @@ import { PoseEditor } from './pose-editor.js';
 import { buildImagePrompt, castLabels, suggestedSize } from './prompt-export.js';
 import { preloadModels, listProps } from './props.js';
 import { listPoses, posedWorld } from './pose-runtime.js';
+import { VideoWorkspace } from './video-ui.js';
 
 hydrateIcons();
 const $ = (sel) => document.querySelector(sel);
@@ -108,6 +109,7 @@ function setTab(t) {
   $('#tab-layout').hidden = t !== 'layout';
   $('#tab-story').hidden = t !== 'story';
   $('#tab-poses').hidden = t !== 'poses';
+  $('#tab-video').hidden = t !== 'video';
   // the 3D editor builds right after the tab has painted (first visit only; later visits just resize)
   if (t === 'poses') { if (poseEditor.built) poseEditor.mount(); else afterPaint(() => { if (state.tab === 'poses') poseEditor.mount(); }); }
   if (t === 'layout' && !$('#lp-grid').childElementCount) renderLayoutGrid();
@@ -115,10 +117,16 @@ function setTab(t) {
     if (!state.proposals.length) rollAll();
     else if (storyStale) drawAll();
   }
+  if (t === 'video') {
+    if (!state.proposals.length) rollAll();
+    storyStale = true; // the video preview shares the renderer
+    afterPaint(() => { if (state.tab === 'video') video?.show(); });
+  } else video?.hide();
   if (changed) fadeIn($('#tab-' + t), { from: 0.55, duration: 120 });
   save();
 }
 let storyStale = true; // something changed while Shots was hidden
+let video = null; // Video workspace (created at boot)
 document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
 
 // ---------------------------------------------------------------- shared layout controls
@@ -1006,7 +1014,7 @@ document.addEventListener('keydown', (e) => {
 // 1 / 2 / 3 switch workspaces (anywhere except while typing)
 document.addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey || e.target.matches('input, select, textarea') || overlayOpen()) return;
-  const t = { 1: 'layout', 2: 'story', 3: 'poses' }[e.key];
+  const t = { 1: 'layout', 2: 'story', 3: 'poses', 4: 'video' }[e.key];
   if (t) { e.preventDefault(); setTab(t); }
 });
 
@@ -1580,6 +1588,20 @@ window.addEventListener('ng-theme', () => { if (state.tab === 'story') { drawTop
 // ---------------------------------------------------------------- boot
 
 const poseEditor = new PoseEditor($('#tab-poses'), { onLibraryChange: () => { if (state.selected.size === 1) drawInspector(); } });
+video = new VideoWorkspace({
+  sr,
+  scene: () => ({
+    shots: prop()?.shots || [], world, scripts: state.scripts, chars: activeChars(),
+    dir: state.sl.dir, caps: state.show.caps, key: scriptsKey(), name: `koma-${state.gacha.seed}-p${state.current + 1}`.replace(/[^\w.-]+/g, '-'),
+  }),
+  editPanel: (i) => {
+    setTab('story');
+    state.selected = new Set([i]);
+    paneTabs.story('panel');
+    drawOverlay();
+    drawInspector();
+  },
+});
 loadCustomPoses().then((list) => { if (list.length && state.tab === 'story') drawInspector(); });
 preloadModels().then(() => { if (state.tab === 'story') drawAll(); });
 

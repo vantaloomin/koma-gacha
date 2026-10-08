@@ -10,7 +10,8 @@ export const GUIDE = {
 5. Stage the bodies: set_staging for the scene's base poses (seated, lying...), edit_panel poses/pair/hold for acting beats.
 6. Roll the gacha, look at the preview, fix what reads wrong with edit_panel (camera, poses) and lock good panels.
 7. render_page diagnostics=true to check reading flow, the 180° axis and weak scores. Then export.
-Topics: shots, layouts, pacing, acting, lettering, groups, workflow, image_prompts.`,
+8. For video: set_shot_motion per panel (camera move, end poses, moves, length), preview_motion, then export_video.
+Topics: shots, layouts, pacing, acting, lettering, groups, workflow, video, image_prompts.`,
 
   shots: `SHOT SIZES (edit_panel camera.size) — what each one says
 - extreme_wide: where we are; characters are small in a big world. Openers, isolation, scale.
@@ -104,6 +105,16 @@ Use find_layouts to preview candidates (contact sheet) before committing.`,
 3. edit_panel for acting: walking + hold suitcase (1), coverMouth (2), running with a full shot (4),
    pair hugFriendly with a two_shot medium camera (5).
 4. render_page diagnostics=true → fix weak panels → render_page → export_image_prompt or export_comic.`,
+
+  video: `VIDEO (set_shot_motion, preview_motion, export_video)
+- Every panel becomes a shot, in reading order. The panel is the START keyframe; set_shot_motion sets the END keyframe and the timing. Frames in between blend: joints rotate smoothly, people slide to new spots, the camera arcs around its subject.
+- Length: defaults to reading time (~3 words/s, 2–10 s). Give silent beats and key moments extra time (duration), and quick reactions less (1–1.5 s).
+- Camera moves: pushIn for rising emotion or a realisation; pullOut to reveal or to leave a scene; orbitLeft/Right for a slow reveal around a hug or a standoff; craneUp/Down for scale or an ending; slideLeft/Right to follow someone walking; dutch for unease. auto (default) reframes for the end keyframe, i.e. the camera follows the action; locked keeps the start camera.
+- Acting: end_poses changes poses (stand → sit, idle → coverMouth); moves walks people (toward: another character, stopping at gap metres; or forward/side/turn); end_pair blends into a group pose (two people stepping into a hug). Big pose changes in one move can pass limbs through the body: split them over two panels or use timing.
+- timing {start, end} holds before or after the move (e.g. 0.4–1 = a beat of stillness, then the move) — stillness before a move makes it land.
+- Transitions: cut by default; dissolve for time passing within a scene; fade for the end of a scene. Use them rarely.
+- Check with preview_motion (frames per shot) before export_video. Keep moves simple: one clear motion per shot reads best.
+- Control videos (controls: depth, lineart, pose) share the animatic's timing for AI video models (e.g. Wan VACE in ComfyUI); the -shots.txt file has each shot's camera notes and lines as prompt material.`,
 
   image_prompts: `IMAGE PROMPTS (export_image_prompt)
 - Give every character a description (add_character description): age, build, hair, clothing. Unset ones become {CHARACTER n} variables.

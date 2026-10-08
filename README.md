@@ -17,7 +17,8 @@ Everything runs on your own machine. No account, no uploads.
 - **Lettering:** speech, thought, shout and whisper balloons, captions and sound effects with real text. Balloons avoid faces and bodies, stay inside the panel (or deliberately break the border) and can be dragged into place.
 - **Export:** PNG, layered SVG, JSON, and print-ready pages with bleed and crop marks (PNG at true size and DPI, PDF with TrimBox/BleedBox).
 - **Image prompts:** export a page or a single panel as a reference image plus a prompt for an image model such as GPT Image. The mannequin colours map to your character descriptions; anything you leave out becomes a `{VARIABLE}` to fill in.
-- **MCP server:** create comics, add pages, direct panels, render and export through an MCP client such as Claude Code or Claude Desktop. A built-in `guide` tool gives the assistant craft tips on shots, pacing, layouts, acting and lettering.
+- **Video:** turn a storyboard page into an animatic. Every panel becomes a timed shot; give a shot an end keyframe and Koma blends the camera move (push in, orbit, crane…), pose changes, people walking and group poses (e.g. two people stepping into a hug). Exports MP4 with subtitles or balloons, plus matching depth, line-art and OpenPose control videos for AI video models.
+- **MCP server:** create comics, add pages, direct panels, render and export through an MCP client such as Claude Code or Claude Desktop. A built-in `guide` tool gives the assistant craft tips on shots, pacing, layouts, acting, lettering and video.
 
 ## Requirements
 
@@ -50,13 +51,14 @@ Ports: the app uses **6170**. The MCP server's headless renderer uses **6171**, 
 
 ## Using Koma
 
-Koma has three workspaces (switch with `1`, `2`, `3`):
+Koma has four workspaces (switch with `1` to `4`):
 
 1. **Pages:** generate page layouts. Choose a preset, panel count range, format, bleed and reading direction, then browse the results and export one as SVG or PNG. The same layouts are available in Shots.
 2. **Shots:** stage a scene on a layout. Open the **Layout** and **Characters** drawers to choose the layout and cast, set each character's base pose, then press **Roll** (`R`) for camera proposals. Click a panel to edit its camera, poses, held props and script (balloons, caption, SFX). Drag balloons to reposition them, and double-click one to reset it. Export from the toolbar: PNG, SVG, print PNG, JSON, image prompt or a shareable link.
 3. **Poses:** the pose editor. Load a pose, drag the joint rings, add props, switch between solo, pair and trio, and **Save to library**. Saved poses go to `poses/custom/` and appear everywhere in Koma, including the MCP server.
+4. **Video:** plays the current Shots page as an animatic. Pick a shot on the timeline and set its length, how it starts (cut, dissolve or fade), a camera move, and how the shot ends: shot size, each character's end pose, where they walk, and a group pose. **Output** sets the size (16:9, 9:16, square, 2.35:1), frame rate, lettering (subtitles, balloons or none) and a slow drift on still shots. **Export** writes the MP4 animatic, depth / line-art / OpenPose control videos with the same timing, and a shot list. Video export needs a current Chrome or Edge (WebCodecs).
 
-Handy keys: `R` roll · `[` `]` previous/next proposal · Shift-click to multi-select · `Del` delete panels · `Ctrl+Z` undo · `Esc` deselect · `↑` `↓` walk the pose library. The full list is in the About dialog.
+Handy keys: `R` roll · `[` `]` previous/next proposal · Shift-click to multi-select · `Del` delete panels · `Ctrl+Z` undo · `Esc` deselect · `↑` `↓` walk the pose library · `Space` play/pause video · `←` `→` step a frame. The full list is in the About dialog.
 
 ### Adult pose pack
 
@@ -85,11 +87,17 @@ claude mcp add --scope user koma -- node "/path/to/koma-gacha/mcp/server.js"
 
 Run `npm install` in the Koma folder first. The server starts its own headless renderer, so the app doesn't need to be running.
 
-**What it can do:** `create_comic`, `add_character`, `find_layouts`, `add_page`, `roll_page`, `edit_panel` (camera, poses, pair and trio poses, held props), `set_staging` (base poses, scene props), `set_page_script` / `set_panel_script`, `render_page`, `export_comic` (PNG, PDF, HTML, print with bleed and crop marks), `export_image_prompt`, `export_panel_guides`, `set_panel_image`, plus pose and prop browsing (`list_poses`, `pose_sheet`, `list_props`, `prop_sheet`, `save_pose`) and the `guide` tool for craft advice.
+**What it can do:** `create_comic`, `add_character`, `find_layouts`, `add_page`, `roll_page`, `edit_panel` (camera, poses, pair and trio poses, held props), `set_staging` (base poses, scene props), `set_page_script` / `set_panel_script`, `render_page`, `export_comic` (PNG, PDF, HTML, print with bleed and crop marks), `export_image_prompt`, `export_panel_guides`, `set_panel_image`, `set_shot_motion` / `preview_motion` / `export_video` (animatics and control videos), plus pose and prop browsing (`list_poses`, `pose_sheet`, `list_props`, `prop_sheet`, `save_pose`) and the `guide` tool for craft advice.
 
 A typical request: *"Make a one-page comic: a soldier comes home from the war and sees his wife for the first time in years."* The assistant creates the characters, picks a layout with the hug as the key panel, directs each panel and exports the page.
 
 **Where comics are saved:** `comics/<id>/` inside the Koma folder (`comic.json`, renders, guides, exports). Set `NG_COMICS_DIR` to save them elsewhere, and `NG_BROWSER_PATH` to use a specific Chromium-based browser.
+
+### From storyboard to video
+
+1. Build the pages, then give shots motion with `set_shot_motion` (or in the app's Video workspace).
+2. `export_video` with `controls: ["depth", "pose"]` writes the animatic, control videos with identical timing, and a `-shots.txt` shot list to `comics/<id>/export/video/`.
+3. Feed the control videos and the shot notes to a video model (e.g. Wan VACE in ComfyUI) to get your blocking, camera moves and timing with finished characters.
 
 ### From storyboard to finished art
 
@@ -112,6 +120,7 @@ Koma is an original tool, inspired by Japanese panel-layout and storyboard ("nam
 - Models: [Kenney](https://kenney.nl/) Furniture Kit and Food Kit (CC0; licenses in `public/models/kenney/`)
 - Fonts: Comic Neue, Bangers and Inter (SIL Open Font License), via Fontsource
 - Icons: [Lucide](https://lucide.dev/) (ISC)
+- Video: [Mediabunny](https://mediabunny.dev/) (MPL-2.0), MP4 muxing over WebCodecs
 - PDF: [pdf-lib](https://pdf-lib.js.org/) (MIT); headless rendering: [Playwright](https://playwright.dev/) (Apache-2.0); MCP: [Model Context Protocol SDK](https://github.com/modelcontextprotocol/typescript-sdk) (MIT)
 
 ## License

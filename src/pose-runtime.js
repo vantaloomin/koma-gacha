@@ -258,6 +258,11 @@ export function resolveCast(world, spec, ctx) {
  */
 export function posedWorld(world, spec, ctx) {
   if (world.posed) return world;
+  return worldFromCast(world, castWithLooks(world, spec, ctx));
+}
+
+// Every character's pose, placement and head turn for one shot (the keyframe state used by motion).
+export function castWithLooks(world, spec, ctx) {
   const cast = resolveCast(world, spec, ctx);
   const first = cast.map((c, i) => fk(world.people[i].h, c.pose, c.place));
   const speaker = ctx?.speaker ?? -1;
@@ -267,10 +272,14 @@ export function posedWorld(world, spec, ctx) {
     if (speaker >= 0) return first[speaker].headCenter;
     return first[i === 0 ? 1 : 0]?.headCenter;
   };
+  return cast.map((c, i) => ({ ...c, look: lookAngles(first[i], target(i), c.pose?.look ?? 1) }));
+}
+
+// Build the posed world (heads, bounds, props) from a cast state.
+export function worldFromCast(world, cast) {
   const people = world.people.map((p, i) => {
     const c = cast[i];
-    const look = lookAngles(first[i], target(i), c.pose?.look ?? 1);
-    const f = look ? fk(p.h, c.pose, c.place, look) : first[i];
+    const f = fk(p.h, c.pose, c.place, c.look);
     const size = f.box.getSize(new THREE.Vector3());
     const center = f.box.getCenter(new THREE.Vector3());
     return {
@@ -280,9 +289,42 @@ export function posedWorld(world, spec, ctx) {
       fwd: new THREE.Vector3(Math.sin(c.place.yaw), 0, Math.cos(c.place.yaw)),
       head: f.headCenter,
       headFwd: f.headFwd,
-      fk: f, pose: c.pose, look, props: [...(c.pose?.props || []), ...c.extraProps],
+      fk: f, pose: c.pose, look: c.look, props: [...(c.pose?.props || []), ...c.extraProps],
       center, extentY: size.y, extentXZ: Math.max(size.x, size.z),
     };
   });
   return { ...world, people, posed: true };
+}
+
+// Blend two cast states: joints slerp, positions lerp, turns take the short way round.
+// Props swap at the halfway point.
+export function lerpCast(A, B, t) {
+  const lerp = (a, b) => a + (b - a) * t;
+  const lerpAngle = (a, b) => a + Math.atan2(Math.sin(b - a), Math.cos(b - a)) * t;
+  return A.map((a, i) => {
+    const b = B[i] || a;
+    const pa = a.pose;
+    const pb = b.pose || pa;
+    let pose = pa;
+    if (pa && pb && pa !== pb) {
+      const bones = {};
+      for (const n of BONES) bones[n] = pa.bones[n].clone().slerp(pb.bones[n], t);
+      pose = {
+        ...(t < 0.5 ? pa : pb),
+        id: `${pa.id}~${pb.id}`,
+        bones,
+        root: { y: lerp(pa.root.y, pb.root.y), q: pa.root.q.clone().slerp(pb.root.q, t) },
+        look: lerp(pa.look ?? 1, pb.look ?? 1),
+      };
+    }
+    const la = a.look || { yaw: 0, pitch: 0 };
+    const lb = b.look || { yaw: 0, pitch: 0 };
+    return {
+      place: { x: lerp(a.place.x, b.place.x), z: lerp(a.place.z, b.place.z), yaw: lerpAngle(a.place.yaw, b.place.yaw) },
+      pose,
+      look: a.look || b.look ? { yaw: lerp(la.yaw, lb.yaw), pitch: lerp(la.pitch, lb.pitch) } : null,
+      extraProps: t < 0.5 ? a.extraProps : b.extraProps,
+      locked: a.locked,
+    };
+  });
 }
