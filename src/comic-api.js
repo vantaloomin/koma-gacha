@@ -20,6 +20,9 @@ import { printGeometry, drawCropMarks } from './print.js';
 import { buildImagePrompt, suggestedSize } from './prompt-export.js';
 import { VideoComposer } from './video.js';
 import { defaultDuration, hasMotion } from './motion.js';
+import { parsePlot } from './plot/parse.js';
+import { comicalize } from './plot/build.js';
+import { drawPlotPage } from './plot/draw.js';
 
 const sr = new StoryRenderer();
 const figCache = new Map();
@@ -369,7 +372,7 @@ const ComicAPI = {
     props.forEach((p, k) => {
       const pc = canvas(pw, ph);
       const pg = pc.getContext('2d');
-      drawPage(pg, sr, layout, p, world, { scale, show: { scores: true }, chars });
+      drawPage(pg, sr, layout, p, world, { scale, show: { scores: true }, chars, panelFx: page.panels });
       drawLettering(pg, scale, layout, p, page, {});
       const x = 16 + (k % cols) * (pw + 16);
       const y = 16 + Math.floor(k / cols) * (ph + 40);
@@ -413,7 +416,7 @@ const ComicAPI = {
       g.fillRect(0, 0, c.width, c.height);
       g.translate(pg.offsetPx, pg.offsetPx);
     }
-    drawPage(g, sr, layout, prop, world, { scale, show: diagnostics ? DIAG_SHOW : {}, chars, panelImages, bleed: pg?.bleedU || 0 });
+    drawPage(g, sr, layout, prop, world, { scale, show: diagnostics ? DIAG_SHOW : {}, chars, panelImages, bleed: pg?.bleedU || 0, panelFx: page.panels });
     drawLettering(g, scale, layout, prop, page, { caps, allowBreak: page.balloonsBreak });
     if (pg) {
       g.setTransform(1, 0, 0, 1, 0, 0);
@@ -443,7 +446,7 @@ const ComicAPI = {
     const scale = LONG / Math.max(box.w, box.h);
     const full = canvas(layout.W * scale, layout.H * scale);
     const fg = full.getContext('2d');
-    drawPage(fg, sr, layout, prop, world, { scale, show: {}, chars, panelImages: await loadImages(images) });
+    drawPage(fg, sr, layout, prop, world, { scale, show: {}, chars, panelImages: await loadImages(images), panelFx: page.panels });
     drawLettering(fg, scale, layout, prop, page, { caps, blank, allowBreak: page.balloonsBreak });
     let out = full;
     if (pn) {
@@ -496,6 +499,35 @@ const ComicAPI = {
       out.push({ panel: i + 1, width: w, height: h, description: describeShot(prop.shots[i], chars), images });
     }
     return out;
+  },
+
+  // ---------------------------------------------------------------- plot (script -> storyboard)
+
+  // Parse and build a plot; returns pages (layout, cameras, scripts) plus a lettered preview of each page.
+  async comicalize({ plot, opts = {}, width = 700, renderStyle = 'shaded', caps = true, previews = true }) {
+    const doc = parsePlot(plot);
+    const res = comicalize(doc, opts);
+    const pages = [];
+    for (const p of res.pages) {
+      let png = null;
+      if (previews) {
+        const figs = await getFigures(p.chars);
+        sr.setFigures(figs, p.chars);
+        sr.setStyle(renderStyle, p.chars);
+        const scale = width / p.layout.W;
+        const c = canvas(width, p.layout.H * scale);
+        const g = c.getContext('2d');
+        drawPlotPage(g, sr, p, { scale, caps });
+        png = c.toDataURL('image/jpeg', 0.86);
+      }
+      pages.push({
+        number: p.number, side: p.side, turnAfter: p.turnAfter, scene: p.scene, background: p.background, room: p.room, flags: p.flags,
+        layout: { ...p.layoutParams, index: p.layoutIndex }, cast: p.chars.map((c) => c.name), positions: p.positions, total: p.prop.total,
+        panels: p.prop.shots.map((s, i) => ({ spec: s.spec, role: s.ctx.role, focus: s.ctx.focus, label: shotLabel(s), score: s.total, script: p.scripts[i], ...p.panels[i] })),
+        png,
+      });
+    }
+    return { title: res.title, dir: res.dir, format: res.format, chars: res.chars, notices: res.notices, pages };
   },
 
   // ---------------------------------------------------------------- video
@@ -574,7 +606,7 @@ async function buildComposer({ pages, width, height, lettering, drift, caps, pag
       const first = clips.length === 0;
       const pageStart = !first && clips[clips.length - 1].pageNumber !== pageNumber;
       clips.push({
-        shot, world: ctx.world, script: p.script, motion: m, chars, setup: setupFn, pageNumber, panel: i,
+        shot, world: ctx.world, script: p.script, motion: m, chars, setup: setupFn, pageNumber, panel: i, fx: { effects: p.effects },
         duration: m?.duration || defaultDuration(p.script, shot.ctx.role),
         transition: m?.transition || (pageStart ? pageTransition : 'cut'),
       });

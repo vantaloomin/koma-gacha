@@ -34,6 +34,7 @@
         <button class="tab" data-tab="story" role="tab" data-tip="Shots" data-kbd="2"><i data-icon="board"></i><span>Shots</span></button>
         <button class="tab" data-tab="poses" role="tab" data-tip="Poses" data-kbd="3"><i data-icon="pose"></i><span>Poses</span></button>
         <button class="tab" data-tab="video" role="tab" data-tip="Video" data-kbd="4"><i data-icon="film"></i><span>Video</span></button>
+        <button class="tab" data-tab="script" role="tab" data-tip="Script" data-kbd="5"><i data-icon="type"></i><span>Script</span></button>
       </nav>
       <div class="appbar-end">
         <button class="icon-btn" id="theme-toggle" data-menu="theme-menu" aria-label="Appearance"></button>
@@ -191,6 +192,11 @@
             <canvas id="sb-top" width="640" height="460"></canvas>
             <p class="hint">Seen from above, with the camera side at the bottom. Wedges are each panel's camera. Drag a character to move them, or select one and use the arrow keys (Shift for bigger steps).</p>
             <button class="btn" id="sb-resetpos"><i data-icon="reset"></i><span>Reset positions</span></button>
+            <h3 class="group-title">Set</h3>
+            <div class="list">
+              <label class="field">Room <select id="sb-room"></select></label>
+            </div>
+            <p class="hint">A ready-made set around the cast: walls, windows, floor and furniture.</p>
           </section>
 
           <section data-ptab-group="story" data-pane="gacha">
@@ -207,7 +213,7 @@
 
           <section data-ptab-group="story" data-pane="view">
             <h3 class="group-title">Rendering</h3>
-            <div class="seg full" id="r-style"><button data-v="shaded">Shaded</button><button data-v="toon">Toon</button><button data-v="silhouette">Silhouette</button><button data-v="lineart">Line art</button></div>
+            <div class="seg full" id="r-style"><button data-v="shaded">Shaded</button><button data-v="toon">Toon</button><button data-v="tone">Tone</button><button data-v="grayscale">Gray</button><button data-v="lineart">Lines</button><button data-v="silhouette">Black</button></div>
             <div class="checks" id="r-show"></div>
           </section>
 
@@ -341,6 +347,7 @@
           <span class="subtle" id="vd-summary"></span>
         </div>
         <div class="toolbar-end">
+          <label class="seg-label" hidden>Play <select id="vd-source"></select></label>
           <button class="btn" data-menu="vd-export-menu"><i data-icon="download"></i><span>Export</span><i data-icon="down" data-size="14"></i></button>
           <div id="vd-export-menu" class="menu" popover role="menu">
             <button data-export="render" role="menuitem"><i data-icon="film"></i><span>Animatic MP4<small>Storyboard render with lettering</small></span></button>
@@ -403,6 +410,89 @@
       </aside>
     </main>
 
+    <!-- ===================== SCRIPT TAB ===================== -->
+    <main id="tab-script" class="tabpage ws ws-script" hidden>
+      <div class="toolbar script-toolbar">
+        <div class="toolbar-title">
+          <h1>Script</h1>
+          <span class="subtle" id="sc-summary"></span>
+        </div>
+        <div class="toolbar-end">
+          <button class="btn ghost" id="sc-help"><i data-icon="info"></i><span>How to write</span></button>
+          <button class="btn" data-menu="sc-file-menu"><i data-icon="save"></i><span>File</span><i data-icon="down" data-size="14"></i></button>
+          <div id="sc-file-menu" class="menu" popover role="menu">
+            <button id="sc-sample" role="menuitem"><i data-icon="sparkles"></i><span>Load the sample plot<small>Replaces the current plot</small></span></button>
+            <button id="sc-open" role="menuitem"><i data-icon="upload"></i><span>Open…<small>.koma.json project or a .txt plot</small></span></button>
+            <hr />
+            <button id="sc-save" role="menuitem"><i data-icon="save"></i><span>Save project<small>Plot, edits and pinned layouts</small></span></button>
+            <button id="sc-save-txt" role="menuitem"><i data-icon="download"></i><span>Save plot<small>.txt</small></span></button>
+            <button id="sc-png" role="menuitem"><i data-icon="png"></i><span>Export pages<small>PNG, 1600 px wide</small></span></button>
+          </div>
+          <span class="divider"></span>
+          <button class="btn" id="sc-shots" title="Open the selected page in Shots"><i data-icon="board"></i><span>Open in Shots</span></button>
+          <button class="btn" id="sc-video" title="Play every page as an animatic"><i data-icon="film"></i><span>Play as video</span></button>
+          <button class="btn primary" id="sc-build" data-kbd="Ctrl Enter" title="Build the storyboard"><i data-icon="wand"></i><span>Build</span></button>
+        </div>
+      </div>
+
+      <aside class="sidebar script-editor" aria-label="Plot">
+        <textarea id="sc-plot" spellcheck="false" aria-label="Plot" wrap="off"></textarea>
+        <div class="script-foot">
+          <label class="field switch-field compact">Rebuild as I type <input type="checkbox" class="switch" id="sc-auto" /></label>
+          <h3 class="group-title">Notices</h3>
+          <div id="sc-notices" class="notices"></div>
+        </div>
+        <input type="file" id="sc-file" accept=".json,.txt,.md" hidden />
+      </aside>
+
+      <section class="stage script-stage">
+        <div class="script-bar">
+          <label class="seg-label">Render <select id="sc-style"><option value="shaded">Shaded</option><option value="toon">Flat color + lines</option><option value="grayscale">Grayscale + lines</option><option value="tone">Tone + lines</option><option value="lineart">Line art</option><option value="silhouette">Silhouette</option></select></label>
+          <label class="seg-label">Zoom <select id="sc-zoom"><option value="fit">Fit</option><option value="260">Small</option><option value="380">Medium</option><option value="560">Large</option></select></label>
+          <span class="spacer"></span>
+          <span class="subtle">Click a panel to edit it. Pages turn where the dashed line is.</span>
+        </div>
+        <div id="sc-pages" class="script-pages"></div>
+      </section>
+
+      <aside class="inspector" aria-label="Panel">
+        <div class="inspector-scroll"><div id="sc-inspector"></div></div>
+      </aside>
+    </main>
+
+    <dialog id="sc-help-dialog" class="sheet help-sheet">
+      <header class="sheet-head">
+        <div>
+          <h2>How to write a plot</h2>
+          <p class="subtle">One line per panel. Koma lays out the pages, stages every panel and letters it.</p>
+        </div>
+        <button class="icon-btn" id="sc-help-close" aria-label="Close"><i data-icon="x" data-size="18"></i></button>
+      </header>
+      <div class="help-body">
+        <table class="syntax">
+          <tr><td><code>Title: …</code></td><td>Title</td></tr>
+          <tr><td><code>Reading direction: Right to left | Left to right</code></td><td>Manga or western page order</td></tr>
+          <tr><td><code>First page: Left | Right</code></td><td>Which side page 1 is on (sets where page turns fall)</td></tr>
+          <tr><td><code>Format: b5 | letter | comic | sns | square</code></td><td>Page size</td></tr>
+          <tr><td><code>Cast: Ken=M01 (174cm), Mia=F01 (150cm)</code></td><td>Characters, model and height</td></tr>
+          <tr><td><code># Scene: Rooftop [Background classroom]</code></td><td>A scene (one floor plan) and its room</td></tr>
+          <tr><td><code>Page 1 [Page-turn reveal]</code></td><td>A page and its tags</td></tr>
+          <tr><td><code>1: Mia "Line" Ken [Close-up, Low angle]</code></td><td>A panel: contents in reading order, then tags</td></tr>
+          <tr><td><code>Name "Line"</code> · <code>Name (Thought)</code> · <code>Name &lt;Off-panel&gt;</code> · <code>Name {Phone}</code></td><td>Speech, thought, off-panel voice, phone / broadcast</td></tr>
+          <tr><td><code>Name "……"</code> · <code>Name</code></td><td>Silent balloon · present but not speaking</td></tr>
+          <tr><td><code>Caption "…"</code> · <code>SFX "…"</code> · <code>Background (…)</code></td><td>Narration · sound effect · a panel with no people</td></tr>
+          <tr><td><code>"Line / Line"</code> · <code>"Line\nLine"</code></td><td>Linked balloons · line break</td></tr>
+          <tr><td><code>[Camera pos=1.2,1.5,3 rot=30,-10 roll=5 lens=35mm]</code></td><td>Exact camera (metres, degrees, mm)</td></tr>
+          <tr><td><code>[Ken pos=0.4,0 facing=180 pose=Arms crossed face=angry,60 gaze=camera]</code></td><td>A person's place, facing, pose, expression and gaze</td></tr>
+          <tr><td><code>[Balloon Ken=Burst balloon,80,spike]</code></td><td>One speaker's balloon type, intensity, shape</td></tr>
+          <tr><td><code>[Effect Focus lines density=70 center=Ken]</code></td><td>Effect lines and tones</td></tr>
+          <tr><td><code>[same=1-2]</code> · <code>[standing=1-2]</code></td><td>Same framing / positions as page 1, panel 2</td></tr>
+        </table>
+        <p class="hint">Words are matched loosely (case, hyphens and common abbreviations such as CU, MCU, LS, OTS, POV all work). Anything left out is chosen automatically.</p>
+        <div id="sc-help-words" class="help-words"></div>
+      </div>
+    </dialog>
+
     <!-- image-generation prompt export -->
     <dialog id="ip-dialog" class="sheet">
       <header class="sheet-head">
@@ -452,10 +542,12 @@
         <div class="about-item"><span class="about-ico"><i data-icon="grid" data-size="18"></i></span><div><b>Pages</b><p>Generates manga and comic page layouts in batches. Open a page to export it or storyboard it.</p></div></div>
         <div class="about-item"><span class="about-ico"><i data-icon="board" data-size="18"></i></span><div><b>Shots</b><p>Gives every panel a camera that fits its shape and the scene's tone. Lock the panels you like and roll again for the rest. Uses mannequins or your own VRM models.</p></div></div>
         <div class="about-item"><span class="about-ico"><i data-icon="pose" data-size="18"></i></span><div><b>Poses</b><p>Edit, combine and save poses for one, two or three characters, with props.</p></div></div>
+        <div class="about-item"><span class="about-ico"><i data-icon="type" data-size="18"></i></span><div><b>Script</b><p>Write a plot and get the whole comic: layouts chosen from your panel tags and page turns, every panel staged and lettered, with effect lines, rooms and expressions.</p></div></div>
         <div class="about-item"><span class="about-ico"><i data-icon="film" data-size="18"></i></span><div><b>Video</b><p>Turns the storyboard into an animatic: every panel becomes a timed shot, and an end keyframe can move the camera, the poses and the characters. Exports MP4 plus control videos for AI video models.</p></div></div>
         <h3 class="group-title">Keyboard shortcuts</h3>
         <dl class="shortcuts">
-          <div><dt><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>4</kbd></dt><dd>Pages, Shots, Poses, Video</dd></div>
+          <div><dt><kbd>1</kbd>…<kbd>5</kbd></dt><dd>Pages, Shots, Poses, Video, Script</dd></div>
+          <div><dt><kbd>Ctrl</kbd><kbd>Enter</kbd></dt><dd>Build the script</dd></div>
           <div><dt><kbd>Space</kbd></dt><dd>Play / pause the video</dd></div>
           <div><dt><kbd>←</kbd><kbd>→</kbd></dt><dd>Step a frame in the video (Shift: a second)</dd></div>
           <div><dt><kbd>R</kbd></dt><dd>Roll new camera plans</dd></div>

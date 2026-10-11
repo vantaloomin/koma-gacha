@@ -95,12 +95,28 @@ export class Mannequin {
     // hair cap: shows which way the head faces from behind
     add('head', new THREE.Mesh(new THREE.SphereGeometry(r * 1.06, 24, 12, 0, Math.PI * 2, 0, Math.PI * 0.62), dm), [0, r * 1.08, -r * 0.08], [-0.5, 0, 0], true);
     const eyeMat = new THREE.MeshBasicMaterial({ color: 0x1b1c22 });
+    this.face = { eyes: [], brows: [], r };
     for (const sx of [-1, 1]) {
       const eye = new THREE.Mesh(new THREE.SphereGeometry(r * 0.13, 10, 8), eyeMat);
       eye.position.set(sx * r * 0.36, r * 1.0, r * 0.88);
       eye.scale.set(1, 1.4, 0.5);
       B.head.add(eye);
+      this.face.eyes.push(eye);
+      // brows and mouth only show for an expression (the default face keeps the plain mannequin look)
+      const brow = new THREE.Mesh(new THREE.CapsuleGeometry(r * 0.035, r * 0.2, 4, 8), eyeMat);
+      brow.rotation.z = Math.PI / 2;
+      brow.position.set(sx * r * 0.36, r * 1.27, r * 0.84);
+      brow.visible = false;
+      brow.userData.side = sx;
+      B.head.add(brow);
+      this.face.brows.push(brow);
     }
+    const smile = new THREE.Mesh(new THREE.TorusGeometry(r * 0.2, r * 0.03, 6, 20, Math.PI * 0.75), eyeMat);
+    const mouthO = new THREE.Mesh(new THREE.SphereGeometry(r * 0.1, 12, 10), eyeMat);
+    for (const m2 of [smile, mouthO]) { m2.position.set(0, r * 0.5, r * 0.92); m2.visible = false; B.head.add(m2); }
+    mouthO.scale.set(0.9, 1.25, 0.35);
+    this.face.smile = smile;
+    this.face.mouthO = mouthO;
     add('head', new THREE.Mesh(new THREE.ConeGeometry(r * 0.12, r * 0.3, 8), m), [0, r * 0.72, r * 0.98], [Math.PI / 2, 0, 0]);
 
     for (const side of ['left', 'right']) {
@@ -148,6 +164,38 @@ export class Mannequin {
     }
   }
 
+  // expr: happy | angry | sad | relaxed | surprised | neutral; amount 0..1
+  setExpression(expr = 'neutral', amount = 1) {
+    const F = this.face;
+    if (!F) return;
+    const r = F.r;
+    const a = Math.max(0, Math.min(1, amount));
+    const on = expr && expr !== 'neutral' && expr !== 'default' && a > 0.05;
+    const arc = Math.PI * 0.75;
+    let eyeY = 1.4;
+    let eyeS = 1;
+    let brow = null; // [tilt (inner end down +), lift]
+    let mouth = null; // 'smile' | 'frown' | 'o'
+    if (on) {
+      if (expr === 'happy') { eyeY = 1.4 - 0.9 * a; brow = [-0.15, 0.08]; mouth = 'smile'; }
+      else if (expr === 'angry') { eyeY = 1.2; brow = [0.55 * a, -0.04]; mouth = 'frown'; }
+      else if (expr === 'sad') { eyeY = 1.25; brow = [-0.5 * a, 0.03]; mouth = 'frown'; }
+      else if (expr === 'surprised') { eyeY = 1.4 + 0.5 * a; eyeS = 1 + 0.3 * a; brow = [0, 0.14 * a]; mouth = 'o'; }
+      else if (expr === 'relaxed') { eyeY = 1.4 - 0.75 * a; brow = [-0.05, 0]; mouth = 'smile'; }
+    }
+    for (const e of F.eyes) e.scale.set(eyeS, eyeY, 0.5);
+    for (const b of F.brows) {
+      b.visible = !!brow;
+      if (!brow) continue;
+      b.rotation.z = Math.PI / 2 + b.userData.side * brow[0];
+      b.position.y = r * (1.27 + brow[1]);
+    }
+    F.smile.visible = mouth === 'smile' || mouth === 'frown';
+    F.mouthO.visible = mouth === 'o';
+    if (mouth === 'smile') { F.smile.rotation.z = Math.PI + (Math.PI - arc) / 2; F.smile.position.y = r * 0.62; F.smile.scale.setScalar(0.6 + 0.4 * a); }
+    if (mouth === 'frown') { F.smile.rotation.z = (Math.PI - arc) / 2; F.smile.position.y = r * 0.42; F.smile.scale.setScalar(0.5 + 0.3 * a); }
+  }
+
   // World matrix of a bone (after applyPose + updateMatrixWorld).
   boneMatrix(name) {
     return this.bones[name]?.matrixWorld || this.root.matrixWorld;
@@ -157,6 +205,8 @@ export class Mannequin {
     this.root.traverse((o) => o.geometry?.dispose?.());
   }
 }
+
+const VRM_EXPRESSIONS = ['happy', 'angry', 'sad', 'relaxed', 'surprised'];
 
 // --- VRM ------------------------------------------------------------------
 
@@ -229,6 +279,13 @@ export class VrmFigure {
 
   boneMatrix(name) {
     return this.vrm.humanoid.getNormalizedBoneNode(name)?.matrixWorld || this.root.matrixWorld;
+  }
+
+  setExpression(expr = 'neutral', amount = 1) {
+    const em = this.vrm.expressionManager;
+    if (!em) return;
+    for (const name of VRM_EXPRESSIONS) em.setValue(name, name === expr ? Math.max(0, Math.min(1, amount)) : 0);
+    em.update();
   }
 
   dispose() {

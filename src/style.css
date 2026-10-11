@@ -752,3 +752,58 @@ kbd { display: inline-flex; align-items: center; justify-content: center; min-wi
   .video-stage { order: 1; overflow: visible; }
   .video-wrap { padding: 16px; }
 }
+
+/* ------------------------------------------------------------ script */
+
+.ws-script { grid-template-columns: minmax(300px, 420px) minmax(0, 1fr) 340px; grid-template-rows: auto minmax(0, 1fr); }
+.script-toolbar { grid-column: 1 / -1; }
+.script-editor { display: flex; flex-direction: column; min-height: 0; }
+#sc-plot { flex: 1; min-height: 0; width: 100%; resize: none; border: 0; border-radius: 0; padding: 14px 16px; margin: 0;
+  font: 12.5px/1.6 var(--mono); color: var(--text); background: var(--surface); tab-size: 2; white-space: pre; overflow: auto; box-shadow: none; }
+#sc-plot:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--focus); }
+.script-foot { flex: none; max-height: 38%; overflow-y: auto; padding: 4px 16px 14px; border-top: 1px solid var(--line); }
+.script-foot .group-title { margin-top: 10px; }
+.notices { display: flex; flex-direction: column; gap: 4px; }
+.notice { display: flex; align-items: flex-start; gap: 8px; height: auto; padding: 6px 8px; border-radius: 8px; background: var(--surface-2); color: var(--text); font-size: 12px; font-weight: 400; line-height: 1.45; text-align: left; justify-content: flex-start; }
+.notice .ico { flex: none; margin-top: 2px; }
+.notice.warn .ico { color: var(--warn); }
+.notice.error .ico { color: var(--bad); }
+.notice.info .ico { color: var(--accent-text); }
+.notice b { font-weight: 600; margin-right: 2px; }
+.script-stage { display: flex; flex-direction: column; overflow: hidden; }
+.script-bar { flex: none; display: flex; align-items: center; gap: 14px; padding: 10px 20px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--surface) 70%, transparent); }
+.script-pages { flex: 1; min-height: 0; overflow: auto; padding: 24px 32px 48px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.spread { display: flex; gap: 2px; align-items: flex-start; }
+.page-slot { display: flex; flex-direction: column; gap: 6px; }
+.page-box { position: relative; line-height: 0; }
+.page-box canvas { display: block; background: #fff; cursor: pointer; box-shadow: var(--page-shadow); }
+.page-slot:first-child .page-box canvas { border-radius: 3px 0 0 3px; }
+.page-slot:last-child .page-box canvas { border-radius: 0 3px 3px 0; }
+.page-slot.on .page-box canvas { box-shadow: 0 0 0 2px var(--accent), var(--page-shadow); }
+.page-ov { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.page-ov .sel { fill: color-mix(in srgb, var(--accent) 8%, transparent); stroke: var(--accent); stroke-width: 6; }
+.empty-slot { visibility: hidden; }
+.page-cap { display: flex; align-items: baseline; gap: 8px; font-size: 12px; color: var(--text-2); padding: 0 2px; }
+.page-cap b { color: var(--text); font-weight: 650; }
+.page-cap .tag { margin-left: auto; color: var(--accent-text); font-weight: 500; }
+.turn { width: min(100%, 720px); display: flex; align-items: center; gap: 10px; color: var(--text-3); font-size: 11.5px; margin: 8px 0 10px; }
+.turn::before, .turn::after { content: ''; flex: 1; border-top: 1px dashed var(--line-strong); }
+.plot-line { display: flex; flex-direction: column; align-items: stretch; gap: 3px; width: 100%; height: auto; padding: 8px 10px; margin: 0 0 10px; border-radius: 8px; background: var(--surface-2); text-align: left; font-weight: 400; }
+.plot-line small { color: var(--text-3); font-size: 11px; }
+.plot-line code { font: 12px/1.45 var(--mono); color: var(--text); white-space: pre-wrap; word-break: break-word; }
+.btn.on { background: var(--accent-soft); color: var(--accent-text); }
+.sc-page-tools { margin-top: 18px; padding-top: 4px; border-top: 1px solid var(--line); }
+.help-sheet { width: min(960px, calc(100vw - 32px)); }
+.help-body { padding: 4px 24px 24px; overflow-y: auto; max-height: calc(100vh - 160px); }
+.syntax td { vertical-align: top; font-size: 12.5px; }
+.syntax td:first-child { width: 58%; }
+.syntax code { font: 12px/1.5 var(--mono); }
+.help-words h4 { margin: 14px 0 4px; font-size: 12.5px; font-weight: 650; }
+.help-words p { margin: 0; font-size: 12.5px; line-height: 1.6; color: var(--text-2); }
+@media (max-width: 960px) {
+  .script-editor { order: 1; }
+  #sc-plot { min-height: 40vh; }
+  .script-stage { order: 2; overflow: visible; }
+  .script-pages { overflow: visible; }
+  .spread { flex-wrap: wrap; justify-content: center; }
+}

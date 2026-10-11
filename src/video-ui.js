@@ -55,8 +55,24 @@ export class VideoWorkspace {
   load() {
     const sc = this.host.scene();
     this.sc = sc;
+    // the Shots page and the script draw with different renderers
+    const sr = sc.sr || this.host.sr;
+    this.preview.sr = sr;
+    this.thumbs.sr = sr;
+    this.preview.lastSetup = null;
+    this.thumbs.lastSetup = null;
     const saved = store.get('video:' + sc.key, null);
     this.data = saved && saved.motions ? saved : { motions: {} };
+    this.syncSource();
+  }
+
+  syncSource() {
+    const sel = $('#vd-source');
+    const list = this.host.sources?.() || {};
+    sel.innerHTML = '';
+    for (const [k, label] of Object.entries(list)) if (label) sel.append(el('option', { value: k }, label));
+    sel.value = this.host.source?.() || 'shots';
+    sel.closest('label').hidden = sel.options.length < 2;
   }
 
   persist() {
@@ -65,6 +81,13 @@ export class VideoWorkspace {
   }
 
   clips() {
+    if (this.sc.clips) {
+      // several pages: clips come prebuilt (each with its own world, cast and renderer setup)
+      return this.sc.clips.map((c, i) => {
+        const m = this.motions[i] || null;
+        return { ...c, motion: m, panel: i, duration: m?.duration || defaultDuration(c.script, c.shot.ctx.role), transition: m?.transition || 'cut' };
+      });
+    }
     const { shots, world, scripts, chars } = this.sc;
     return shots.map((shot, i) => {
       const m = this.motions[i] || null;
@@ -294,7 +317,7 @@ export class VideoWorkspace {
     const i = c.panel;
     const m = this.motions[i] || {};
     const to = m.to || {};
-    const chars = this.sc.chars;
+    const chars = c.chars || this.sc.chars;
     const auto = defaultDuration(c.script, c.shot.ctx.role);
 
     box.append(el('div', { class: 'insp-head' },
@@ -377,7 +400,7 @@ export class VideoWorkspace {
       box.append(g, el('p', { class: 'hint' }, `Group poses place ${chars[1].name}${chars.length >= 3 ? ` and ${chars[2].name}` : ''} relative to ${chars[0].name}; everyone walks into place during the move.`));
     }
 
-    const edit = el('button', { class: 'btn', title: 'The start of the shot is the panel itself' }, icon('board'), el('span', {}, 'Edit start in Shots'));
+    const edit = el('button', { class: 'btn', title: 'The start of the shot is the panel itself' }, icon(this.sc.clips ? 'type' : 'board'), el('span', {}, this.sc.clips ? 'Edit in Script' : 'Edit start in Shots'));
     edit.addEventListener('click', () => this.host.editPanel(i));
     const clear = el('button', { class: 'btn', disabled: !this.motions[i] }, icon('reset'), el('span', {}, 'Clear motion'));
     clear.addEventListener('click', () => this.setMotion(i, { duration: undefined, transition: undefined, camera: undefined, ease: undefined, start: undefined, end: undefined, to: undefined }, { rebuildThumbs: true }));
@@ -405,7 +428,7 @@ export class VideoWorkspace {
     this.pause();
     const kinds = kind === 'all' ? ['render', 'depth', 'lineart', 'pose'] : [kind];
     const [w, h] = this.size();
-    const comp = new VideoComposer(this.host.sr, { lettering: this.settings.lettering, drift: this.settings.drift, caps: this.sc.caps, dir: this.sc.dir });
+    const comp = new VideoComposer(this.sc.sr || this.host.sr, { lettering: this.settings.lettering, drift: this.settings.drift, caps: this.sc.caps, dir: this.sc.dir });
     comp.setSize(w, h);
     comp.setClips(this.clips());
     const ac = new AbortController();
@@ -441,9 +464,9 @@ export class VideoWorkspace {
 
   exportShotList() {
     const clips = this.preview.timeline.clips;
-    const chars = this.sc.chars;
-    const name = (s) => (s == null ? 'Narration' : s === -1 ? 'Off screen' : chars[s]?.name || '?');
     const lines = clips.map((c, k) => {
+      const chars = c.chars || this.sc.chars;
+      const name = (s) => (s == null ? 'Narration' : s === -1 ? 'Off screen' : chars[s]?.name || '?');
       const m = c.motion;
       const bits = [];
       if (m?.camera && m.camera !== 'auto') bits.push(CAMERA_MOVES[m.camera]?.label.toLowerCase());
@@ -453,7 +476,7 @@ export class VideoWorkspace {
       const script = c.script || {};
       const said = (script.dialogue || []).filter((d) => d.text?.trim()).map((d) => `${name(d.speaker)}: "${d.text.trim()}"`);
       if (script.caption?.trim()) said.unshift(`Caption: "${script.caption.trim()}"`);
-      return `${fmtTime(c.t0)}–${fmtTime(c.t1)}  shot ${k + 1}${c.transition !== 'cut' ? ` (${c.transition} in)` : ''}: ${shotLabel(c.shot)}\n  motion: ${bits.join(', ') || 'still'}${said.length ? '\n  ' + said.join('\n  ') : ''}`;
+      return `${fmtTime(c.t0)}–${fmtTime(c.t1)}  shot ${k + 1}${c.label ? ` (${c.label})` : ''}${c.transition !== 'cut' ? ` (${c.transition} in)` : ''}: ${shotLabel(c.shot)}\n  motion: ${bits.join(', ') || 'still'}${said.length ? '\n  ' + said.join('\n  ') : ''}`;
     });
     const [w, h] = this.size();
     const txt = `${this.sc.name} — ${this.total.toFixed(1)} s, ${w}x${h}, ${this.settings.fps} fps\n\n${lines.join('\n\n')}\n`;
@@ -475,6 +498,7 @@ export class VideoWorkspace {
       b.addEventListener('click', () => { $('#vd-export-menu').hidePopover?.(); this.export(b.dataset.export); });
     }
     $('#vd-busy-cancel').addEventListener('click', () => this.abort?.abort());
+    $('#vd-source').addEventListener('change', (e) => { this.pause(); this.host.setSource?.(e.target.value); this.time = 0; this.selected = 0; this.show(); });
 
     const size = $('#vd-size');
     for (const [k, v] of Object.entries(VIDEO_SIZES)) size.append(el('option', { value: k }, v.label));

@@ -20,6 +20,8 @@ import { buildImagePrompt, castLabels, suggestedSize } from './prompt-export.js'
 import { preloadModels, listProps } from './props.js';
 import { listPoses, posedWorld } from './pose-runtime.js';
 import { VideoWorkspace } from './video-ui.js';
+import { ScriptWorkspace } from './script-ui.js';
+import { ROOMS, roomProps } from './rooms.js';
 
 hydrateIcons();
 const $ = (sel) => document.querySelector(sel);
@@ -63,6 +65,7 @@ const state = {
   chars: DEFAULT_CHARS.map((c, i) => ({ ...c, ...(store.get('chars', [])[i] || {}), model: 'mannequin', vrmName: null })),
   gacha: { seed: 'G-1', style: 'balance', tone: 'auto', intensity: 'normal', count: 6, ...store.get('gacha', {}) },
   renderStyle: store.get('renderStyle', 'shaded'),
+  room: store.get('room', ''),
   show: { ...DEFAULT_SHOW, ...store.get('show', {}) },
   view: 'single',
   current: 0,
@@ -96,6 +99,7 @@ function save() {
   store.set('pos:' + state.nChars, state.chars.slice(0, state.nChars).map((c) => ({ x: c.x, z: c.z })));
   store.set('gacha', state.gacha);
   store.set('renderStyle', state.renderStyle);
+  store.set('room', state.room);
   store.set('show', state.show);
 }
 const pick = (o, keys) => Object.fromEntries(keys.filter((k) => k in o).map((k) => [k, o[k]]));
@@ -110,6 +114,9 @@ function setTab(t) {
   $('#tab-story').hidden = t !== 'story';
   $('#tab-poses').hidden = t !== 'poses';
   $('#tab-video').hidden = t !== 'video';
+  $('#tab-script').hidden = t !== 'script';
+  if (t === 'script') afterPaint(() => { if (state.tab === 'script') script?.show(); });
+  else script?.hide();
   // the 3D editor builds right after the tab has painted (first visit only; later visits just resize)
   if (t === 'poses') { if (poseEditor.built) poseEditor.mount(); else afterPaint(() => { if (state.tab === 'poses') poseEditor.mount(); }); }
   if (t === 'layout' && !$('#lp-grid').childElementCount) renderLayoutGrid();
@@ -127,6 +134,8 @@ function setTab(t) {
 }
 let storyStale = true; // something changed while Shots was hidden
 let video = null; // Video workspace (created at boot)
+let script = null; // Script workspace (created at boot)
+let videoSource = 'shots'; // what Video plays: the Shots page, or every page of the script
 document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
 
 // ---------------------------------------------------------------- shared layout controls
@@ -323,7 +332,7 @@ function rollAll({ newSeed = false } = {}) {
     // locks apply to every proposal so locked panels survive the reroll
     state.proposals.push(rollProposal({
       layout, world, plan, tone: state.gacha.tone, intensity: state.gacha.intensity, style: state.gacha.style,
-      seed: `${state.gacha.seed}|${k}`, locks: state.locks, nChars: state.nChars, staging: stagingFor(),
+      seed: `${state.gacha.seed}|${k}`, locks: state.locks, nChars: state.nChars, staging: stagingFor(), sceneProps: state.room ? roomProps(state.room) : null,
     }));
   }
   state.current = Math.min(state.current, state.proposals.length - 1);
@@ -1014,7 +1023,7 @@ document.addEventListener('keydown', (e) => {
 // 1 / 2 / 3 switch workspaces (anywhere except while typing)
 document.addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey || e.target.matches('input, select, textarea') || overlayOpen()) return;
-  const t = { 1: 'layout', 2: 'story', 3: 'poses', 4: 'video' }[e.key];
+  const t = { 1: 'layout', 2: 'story', 3: 'poses', 4: 'video', 5: 'script' }[e.key];
   if (t) { e.preventDefault(); setTab(t); }
 });
 
@@ -1381,7 +1390,7 @@ function svgToPng(svg, w, h) {
   });
 }
 
-window.__ng = { state, get world() { return world; }, get layout() { return layout; }, get hits() { return pageHits; } };
+window.__ng = { state, get world() { return world; }, get layout() { return layout; }, get hits() { return pageHits; }, get video() { return video; }, get script() { return script; } };
 
 window.addEventListener('resize', () => { if (state.tab === 'story' && state.view === 'single') scheduleResize(); });
 
@@ -1588,18 +1597,63 @@ window.addEventListener('ng-theme', () => { if (state.tab === 'story') { drawTop
 // ---------------------------------------------------------------- boot
 
 const poseEditor = new PoseEditor($('#tab-poses'), { onLibraryChange: () => { if (state.selected.size === 1) drawInspector(); } });
+
+{
+  const sel = $('#sb-room');
+  fillSelect(sel, [['', 'None (grid floor)'], ...Object.entries(ROOMS)], state.room || '');
+  sel.addEventListener('change', () => { state.room = sel.value; save(); rollAll(); });
+}
+
+// A built script page becomes the Shots page: same layout, cast, floor plan, cameras (locked) and lettering.
+async function importStoryPage(p) {
+  Object.assign(state.sl, pick(p.layoutParams, LAYOUT_KEYS), { index: p.layoutIndex });
+  state.nChars = p.chars.length;
+  p.chars.forEach((c, i) => {
+    Object.assign(state.chars[i], { name: c.name, height: c.height, color: c.color, model: 'mannequin', base: null, x: p.positions[i]?.x ?? 0, z: p.positions[i]?.z ?? 0, yawOffset: p.positions[i]?.yaw || 0 });
+  });
+  for (let i = 0; i < state.nChars; i++) await rebuildFigure(i);
+  state.removed = [];
+  state.undo = [];
+  state.selected.clear();
+  state.locks = Object.fromEntries(p.specs.map((s, i) => [i, { mode: 'all', spec: structuredClone(s) }]));
+  state.planOverrides = Object.fromEntries(p.plan.map((pl, i) => [i, { role: pl.role, speaker: pl.speaker }]));
+  state.scripts = p.scripts;
+  state.current = 0;
+  state.room = p.room || '';
+  $('#sb-room').value = state.room;
+  syncStoryLayoutControls();
+  renderCharList();
+  saveScripts();
+  save();
+  setTab('story');
+  rollAll();
+  toast('Page opened in Shots; its panels are locked');
+  return true;
+}
 video = new VideoWorkspace({
   sr,
-  scene: () => ({
-    shots: prop()?.shots || [], world, scripts: state.scripts, chars: activeChars(),
+  sources: () => ({ shots: 'Shots page', script: script?.result?.pages.length ? `Script (${script.result.pages.length} pages)` : null }),
+  source: () => videoSource,
+  setSource: (s) => { videoSource = s; },
+  scene: () => (videoSource === 'script' && script?.videoScene()) || {
+    shots: prop()?.shots || [], world, scripts: state.scripts, chars: activeChars(), sr,
     dir: state.sl.dir, caps: state.show.caps, key: scriptsKey(), name: `koma-${state.gacha.seed}-p${state.current + 1}`.replace(/[^\w.-]+/g, '-'),
-  }),
+  },
   editPanel: (i) => {
+    if (videoSource === 'script') { setTab('script'); return; }
     setTab('story');
     state.selected = new Set([i]);
     paneTabs.story('panel');
     drawOverlay();
     drawInspector();
+  },
+});
+script = new ScriptWorkspace({
+  importPage: importStoryPage,
+  playVideo: () => {
+    if (!script.result?.pages.length) return;
+    videoSource = 'script';
+    setTab('video');
   },
 });
 loadCustomPoses().then((list) => { if (list.length && state.tab === 'story') drawInspector(); });

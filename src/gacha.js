@@ -9,7 +9,7 @@ import { readingFlow } from './layout.js';
 
 export const SIZES = ['Extreme wide', 'Full shot', 'Medium', 'Medium close-up', 'Close-up'];
 export const SIZE_SHORT = ['EWS', 'FS', 'MS', 'MCU', 'CU'];
-export const TYPES = { establish: 'Establishing', two: 'Two-shot', single: 'Single', ots: 'Over-the-shoulder' };
+export const TYPES = { establish: 'Establishing', two: 'Two-shot', single: 'Single', ots: 'Over-the-shoulder', pov: 'Point of view' };
 export const ROLES = { establish: 'Set the scene', dialogue: 'Dialogue', reaction: 'Reaction', key: 'Key moment' };
 
 export const TONES = {
@@ -53,7 +53,13 @@ const UP = new THREE.Vector3(0, 1, 0);
 export function defaultPositions(n) {
   if (n === 1) return [{ x: 0, z: 0 }];
   if (n === 2) return [{ x: -0.55, z: 0 }, { x: 0.55, z: 0 }];
-  return [{ x: -0.6, z: 0.05 }, { x: 0.6, z: 0.05 }, { x: 0, z: -0.75 }];
+  if (n === 3) return [{ x: -0.6, z: 0.05 }, { x: 0.6, z: 0.05 }, { x: 0, z: -0.75 }];
+  // larger groups: an open half-circle facing the camera side
+  const r = 0.45 + n * 0.16;
+  return Array.from({ length: n }, (_, i) => {
+    const a = Math.PI * (0.15 + (0.7 * i) / (n - 1));
+    return { x: -Math.cos(a) * r, z: -Math.sin(a) * r * 0.8 + r * 0.4 };
+  });
 }
 
 // chars: [{height(cm), x, z, yawOffset}] -> world description used by camera + scoring
@@ -108,10 +114,14 @@ export function gazeFor(world, idx, speaker, listener) {
 // --- camera ---------------------------------------------------------------
 
 // Vertical span to frame for each shot size; wide sizes follow the posed body's extent.
-function spanFor(size, S) {
+// spec.zoom scales it (e.g. 0.6 on a close-up = extreme close-up, 0.8 on a full shot = knee shot).
+function spanFor(size, S, zoom = 1) {
   const ext = Math.max(0.5, S.extentY ?? S.h);
-  return [ext * 1.9, ext * 1.2, 1.0, 0.68, 0.42][size];
+  return [ext * 1.9, ext * 1.2, 1.0, 0.68, 0.42][size] * (zoom || 1);
 }
+
+// Vertical field of view (deg) for a lens in mm on a 35 mm frame.
+export const lensFov = (mm) => (2 * Math.atan(12 / Math.max(4, mm)) * 180) / Math.PI;
 
 function rotY(v, ang) {
   return v.clone().applyAxisAngle(UP, ang);
@@ -121,15 +131,31 @@ function rotY(v, ang) {
 export function computeCamera(spec, world, aspect, ctx = null) {
   world = posedWorld(world, spec, ctx);
   const cam = new THREE.PerspectiveCamera(spec.fov, aspect, 0.05, 200);
-  const S = world.people[spec.subject] || world.people[0];
+  const hidden = new Set(spec.hide || []);
+  const shown = world.people.filter((p) => !hidden.has(p.i));
+  const S = world.people[spec.subject] || shown[0] || world.people[0];
   const O = world.people[spec.other] ?? null;
   const n = world.normal;
   let focus;
   let pos;
   const size = spec.size;
-  let span = spanFor(size, S);
+  let span = spanFor(size, S, spec.zoom);
 
-  if (spec.type === 'ots' && O) {
+  if (spec.type === 'free' && spec.cam) {
+    // explicit camera: position (m), rotation (horizontal, vertical deg), roll, lens (mm)
+    const [x, y, z] = spec.cam.pos || [0, 1.5, 4];
+    const [h = 0, v = 0] = spec.cam.rot || [];
+    pos = new THREE.Vector3(x, y, z);
+    const dir = new THREE.Vector3(-Math.sin(h * DEG) * Math.cos(v * DEG), Math.sin(v * DEG), -Math.cos(h * DEG) * Math.cos(v * DEG));
+    focus = pos.clone().add(dir.multiplyScalar(3));
+    cam.fov = clamp(lensFov(spec.cam.lens || 35), 4, 100);
+  } else if (spec.type === 'pov' && O) {
+    // point of view: from the other character's eyes toward the subject
+    focus = S.head.clone();
+    pos = O.head.clone().add(O.headFwd.clone().setY(0).normalize().multiplyScalar(0.06));
+    const dist = pos.distanceTo(focus);
+    cam.fov = clamp(2 * Math.atan(span / 2 / Math.max(0.2, dist)) / DEG, 8, 80);
+  } else if (spec.type === 'ots' && O) {
     // behind the listener's shoulder, on the camera side of the axis
     focus = S.head.clone();
     const side = n.clone();
@@ -148,12 +174,19 @@ export function computeCamera(spec, world, aspect, ctx = null) {
     if (spec.type === 'single') {
       base = S.fwd.clone().add(n.clone().multiplyScalar(0.55)).setY(0).normalize();
       if (world.n === 1) base = S.fwd.clone();
+      if (spec.view != null) {
+        // view: degrees around the subject from their facing (0 front, 45 three-quarter, 90 profile, 180 back),
+        // on whichever side keeps the camera on the camera side of the conversation axis
+        const a = rotY(S.fwd, spec.view * DEG);
+        const b = rotY(S.fwd, -spec.view * DEG);
+        base = (world.n < 2 || a.dot(n) >= b.dot(n) ? a : b).setY(0).normalize();
+      }
       focus = size >= 2 ? S.head.clone() : S.center.clone().add(new THREE.Vector3(0, size === 0 ? 0 : S.extentY * 0.06, 0));
       // lying or sprawled bodies are wider than they are tall
       if (size <= 1) span = Math.max(span, ((S.extentXZ + 0.3) / aspect) * 1.05);
     } else {
       base = n.clone();
-      const pts = world.people;
+      const pts = shown.length ? shown : [{ center: world.mid.clone().setY(0.9), head: world.mid.clone().setY(1.5), fk: null, pos: world.mid }];
       const c = pts.reduce((v, p) => v.add(p.center), new THREE.Vector3()).multiplyScalar(1 / pts.length);
       const hy = pts.reduce((s, p) => s + p.head.y, 0) / pts.length;
       focus = new THREE.Vector3(c.x, size >= 2 ? hy - 0.08 : c.y, c.z);
@@ -174,6 +207,7 @@ export function computeCamera(spec, world, aspect, ctx = null) {
 
   cam.position.copy(pos);
   cam.lookAt(focus);
+  if (spec.type === 'free' && spec.cam?.roll) cam.rotateZ(spec.cam.roll * DEG);
   if (spec.dutch) cam.rotateZ(spec.dutch * DEG);
   cam.updateMatrixWorld(true);
   cam.updateProjectionMatrix();
@@ -214,13 +248,67 @@ function toPanel(v, cam) {
 // Screen-space facts about each person in a shot.
 export function analyzeShot(spec, world, aspect, ctx) {
   const { camera, sideOk, world: W } = computeCamera(spec, world, aspect, ctx);
-  return { camera, sideOk, people: analyzeCamera(camera, W, ctx) };
+  return { camera, sideOk, people: analyzeCamera(camera, W, ctx), world: W };
+}
+
+// Closest distance between segments p1-q1 and p2-q2.
+function segDist(p1, q1, p2, q2) {
+  const d1 = q1.clone().sub(p1);
+  const d2 = q2.clone().sub(p2);
+  const r = p1.clone().sub(p2);
+  const a = d1.dot(d1);
+  const e = d2.dot(d2);
+  const f = d2.dot(r);
+  let s;
+  let t;
+  if (a <= 1e-9 && e <= 1e-9) return r.length();
+  if (a <= 1e-9) { s = 0; t = clamp01(f / e); }
+  else {
+    const c = d1.dot(r);
+    if (e <= 1e-9) { t = 0; s = clamp01(-c / a); }
+    else {
+      const b = d1.dot(d2);
+      const den = a * e - b * b;
+      s = den !== 0 ? clamp01((b * f - c * e) / den) : 0;
+      t = (b * s + f) / e;
+      if (t < 0) { t = 0; s = clamp01(-c / a); }
+      else if (t > 1) { t = 1; s = clamp01((b - c) / a); }
+    }
+  }
+  return p1.clone().addScaledVector(d1, s).distanceTo(p2.clone().addScaledVector(d2, t));
+}
+
+// Is F's face hidden behind P's body (torso, shoulders, upper arms, head) as seen from the camera?
+// Returns how deep the line of sight runs into P (0 = clear, 1 = through the middle).
+function occludes(P, F, camPos) {
+  const m = P.fk?.mats;
+  if (!m) return 0;
+  const at = (n) => new THREE.Vector3().setFromMatrixPosition(m[n]);
+  const h = P.h;
+  const eye = F.head;
+  const segs = [
+    [at('hips'), at('chest'), 0.085 * h], [at('chest'), at('neck'), 0.08 * h], [at('neck'), P.head, 0.035 * h],
+    [P.head, P.head, 0.068 * h], [at('leftUpperArm'), at('rightUpperArm'), 0.04 * h],
+    [at('leftUpperArm'), at('leftLowerArm'), 0.03 * h], [at('rightUpperArm'), at('rightLowerArm'), 0.03 * h],
+  ];
+  // stop the sight line a little short of the face so F's own head doesn't count
+  const end = eye.clone().lerp(camPos, 0.06);
+  let worst = 0;
+  for (const [a, b, r] of segs) {
+    const d = segDist(camPos, end, a, b);
+    if (d < r) worst = Math.max(worst, 1 - d / r);
+  }
+  return worst;
 }
 
 // Screen-space facts for an already-posed world seen through any camera (also used for motion frames).
 export function analyzeCamera(camera, W, ctx) {
   const camPos = camera.position;
   return W.people.map((p) => {
+    if (p.hidden) {
+      // left out of this panel: never in frame, never an obstacle
+      return { i: p.i, u: -1, v: -1, rv: 0, ru: 0, gaze: { du: 0, dv: 0 }, faceVis: -1, body: { u0: -1, u1: -1, v0: -1, v1: -1 }, depth: 99, inFrame: false, behind: true, hidden: true, topV: -1, gazeInfo: { dir: p.headFwd } };
+    }
     const dir = p.headFwd;
     const c = toPanel(p.head, camera);
     const top = toPanel(p.head.clone().add(new THREE.Vector3(0, p.r * 1.15, 0)), camera);
@@ -407,6 +495,15 @@ export function scoreShot(spec, world, ctx) {
       const P = an.people[a];
       if (P.i !== fIdx && !P.behind && P.depth < F.depth && F.u > P.body.u0 && F.u < P.body.u1 && F.v > P.body.v0 && F.v < P.body.v1) ov -= 60;
     }
+    // line of sight to the focus face through a nearer body (over-the-shoulder shots that bury the speaker)
+    if (an.world && F.inFrame) {
+      const FW = an.world.people[fIdx];
+      for (const PW of an.world.people) {
+        if (PW.i === fIdx || PW.hidden) continue;
+        const k = occludes(PW, FW, an.camera.position);
+        if (k > 0) ov -= 40 + k * 120;
+      }
+    }
     s.overlap = clamp(ov, 0, 100);
   }
 
@@ -488,20 +585,28 @@ function samplePoses(rng, nChars, speaker, tone, staging) {
   return poses;
 }
 
+/**
+ * ctx.constraint (from script tags) narrows the draw: {type, types: {type: weight}, size, zoom, elev: [lo, hi],
+ * dutch, az, view, fov, frame: 'left'|'right'|'center'|'corner', fx, fy, subject, other, poses, place, hide, gaze, hold}.
+ */
 export function sampleSpec(rng, world, ctx, jitter, keep) {
   const nChars = world.n;
   const pr = ROLE_PREFS[ctx.role];
   const tone = TONES[ctx.tone] || TONES.auto;
-  const subject = ctx.speaker >= 0 ? ctx.speaker : ctx.focus;
-  const other = nChars > 1 ? (ctx.listener ?? (subject === 0 ? 1 : 0)) : null;
+  const c = ctx.constraint || {};
+  const subject = c.subject ?? (ctx.speaker >= 0 ? ctx.speaker : ctx.focus);
+  const other = c.other ?? (nChars > 1 ? (ctx.listener != null && ctx.listener !== subject ? ctx.listener : subject === 0 ? 1 : 0) : null);
+  const hidden = new Set(c.hide || []);
+  const shownCount = nChars - hidden.size;
 
-  let type = keep?.type;
+  let type = keep?.type || c.type;
   if (!type) {
-    const types = { ...pr.types };
-    if (nChars === 1) { delete types.ots; delete types.two; types.single = (types.single || 0) + 1; }
+    const types = { ...(c.types || pr.types) };
+    if (nChars === 1 || shownCount <= 1 || hidden.has(other)) { delete types.ots; delete types.two; types.single = (types.single || 0) + 1; }
+    if (!Object.keys(types).length) types.single = 1;
     type = rng.weighted(Object.entries(types).map(([k, w]) => [k, Math.pow(w, 1 / jitter)]));
   }
-  let size = keep?.size;
+  let size = keep?.size ?? c.size;
   if (size == null) {
     const sz = pr.sizes.map((w, i) => [i, Math.pow(Math.max(0.02, w * (1 + (i - 2) * tone.size * 0.35)), 1 / jitter)]);
     size = Number(rng.weighted(sz));
@@ -513,14 +618,19 @@ export function sampleSpec(rng, world, ctx, jitter, keep) {
   let elev = rng.range(elo * k, ehi * k) + rng.gauss() * 6 * jitter;
   if (type === 'establish') elev = Math.max(elev, 18 + rng.range(0, 22));
   if (ctx.role === 'establish' && type === 'two') elev = Math.max(elev, 10);
-  elev = clamp(elev, -40, 75);
-  const dutch = rng.chance(tone.dutch ? 0.75 : 0.06 * jitter) ? (rng.chance(0.5) ? 1 : -1) * rng.range(3, (tone.dutch || 6) * k + 3) : 0;
-  const az = rng.gauss() * (type === 'ots' ? 10 : 22) * jitter;
-  const fov = type === 'ots' ? 35 : rng.pick(size >= 3 ? [28, 32, 38] : [35, 40, 45, 50]);
-  const spec = { type, subject, other, size, az, elev, dutch, fov, fx: 0, fy: 0, poses: keep?.poses || samplePoses(rng, nChars, ctx.speaker, ctx.tone, ctx.staging) };
+  if (c.elev) elev = rng.range(c.elev[0], c.elev[1]);
+  elev = clamp(elev, -40, 80);
+  let dutch = rng.chance(tone.dutch ? 0.75 : 0.06 * jitter) ? (rng.chance(0.5) ? 1 : -1) * rng.range(3, (tone.dutch || 6) * k + 3) : 0;
+  if (c.dutch != null) dutch = c.dutch ? (rng.chance(0.5) ? 1 : -1) * Math.abs(c.dutch) * rng.range(0.85, 1.15) : 0;
+  const az = c.az ?? rng.gauss() * (type === 'ots' ? 10 : c.view != null ? 6 : 22) * jitter;
+  const fov = c.fov ?? (type === 'ots' ? 35 : rng.pick(size >= 3 ? [28, 32, 38] : [35, 40, 45, 50]));
+  const poses = { ...(keep?.poses || samplePoses(rng, nChars, ctx.speaker, ctx.tone, ctx.staging)), ...(c.poses || {}) };
+  const spec = { type, subject, other, size, az, elev, dutch, fov, fx: 0, fy: 0, poses };
+  for (const key of ['zoom', 'view', 'place', 'hide', 'gaze', 'hold', 'cam', 'pair', 'face']) if (c[key] != null) spec[key] = structuredClone(c[key]);
 
   // smart composition defaults: look room + face on the upper third
   if (keep?.fx != null) { spec.fx = keep.fx; spec.fy = keep.fy; }
+  else if (type === 'free') { spec.fx = 0; spec.fy = 0; }
   else {
     const an = analyzeShot(spec, world, ctx.px.w / ctx.px.h, ctx);
     const F = an.people[subject];
@@ -536,7 +646,15 @@ export function sampleSpec(rng, world, ctx, jitter, keep) {
       spec.fx = clamp(spec.fx * (1 - k) + (cu * 2 - 1) * k, -0.75, 0.75);
       spec.fy = clamp(spec.fy * (1 - k) + (1 - cv * 2) * k, -0.75, 0.75);
     }
+    // composition tags: lens shift puts the subject where the script asks
+    if (c.frame === 'center') spec.fx = 0;
+    else if (c.frame === 'left') spec.fx = -rng.range(0.38, 0.5);
+    else if (c.frame === 'right') spec.fx = rng.range(0.38, 0.5);
+    else if (c.frame === 'corner') { spec.fx = (rng.chance(0.5) ? -1 : 1) * rng.range(0.5, 0.62); spec.fy = rng.range(0.35, 0.5); }
+    else if (c.frame === 'negative') spec.fx = (rng.chance(0.5) ? -1 : 1) * rng.range(0.55, 0.68);
   }
+  if (c.fx != null) spec.fx = c.fx;
+  if (c.fy != null) spec.fy = c.fy;
   return spec;
 }
 
@@ -554,20 +672,23 @@ export function panelContexts(layout, plan, tone, intensity, extra = {}) {
       const prevSpeaker = plan.slice(0, i).reverse().find((x) => x.speaker >= 0 && x.speaker !== pl.speaker)?.speaker;
       listener = prevSpeaker ?? (pl.speaker === 0 ? 1 : 0);
     }
+    const constraint = extra.constraints?.[i] || null;
     return {
-      index: i, role: pl.role, speaker: pl.speaker, focus: pl.focus, listener, isLargest: pl.isLargest,
-      tone, intensity, entry: norm(flow[i].entry), exit: norm(flow[i].exit), entryPx: flow[i].entry, exitPx: flow[i].exit,
+      index: i, role: pl.role, speaker: pl.speaker, focus: pl.focus, listener: pl.listener ?? listener, isLargest: pl.isLargest,
+      tone: constraint?.tone || tone, intensity, entry: norm(flow[i].entry), exit: norm(flow[i].exit), entryPx: flow[i].entry, exitPx: flow[i].exit,
       px: { w: b.w, h: b.h }, polyN, occN,
-      staging: extra.staging || null, sceneProps: extra.sceneProps || null,
+      staging: extra.staging || null, sceneProps: extra.sceneProps || null, constraint,
     };
   });
 }
 
 // Roll one proposal. locks: {panelIndex: {mode:'all'|'camera'|'pose', spec}}
-export function rollProposal({ layout, world, plan, tone, intensity, style, seed, locks = {}, nChars, staging = null, sceneProps = null }) {
+// constraints: {panelIndex: constraint} (see sampleSpec); a constraint with `copy` reuses another shot's
+// camera ('prev' = the panel before) with changes, e.g. {copy: 'prev', sizeDelta: 1} for a punch-in.
+export function rollProposal({ layout, world, plan, tone, intensity, style, seed, locks = {}, nChars, staging = null, sceneProps = null, constraints = null }) {
   const rng = makeRng(seed);
   const st = STYLES[style] || STYLES.balance;
-  const ctxs = panelContexts(layout, plan, tone, intensity, { staging, sceneProps });
+  const ctxs = panelContexts(layout, plan, tone, intensity, { staging, sceneProps, constraints });
   const shots = [];
   for (let i = 0; i < ctxs.length; i++) {
     const ctx = { ...ctxs[i], prev: shots[i - 1]?.spec };
@@ -575,6 +696,18 @@ export function rollProposal({ layout, world, plan, tone, intensity, style, seed
     if (lock?.mode === 'all') {
       const sc = scoreShot(lock.spec, world, ctx);
       shots.push({ spec: lock.spec, ...sc, ctx });
+      continue;
+    }
+    const cc = ctx.constraint;
+    const src = cc?.copy === 'prev' ? shots[i - 1]?.spec : cc?.copy && typeof cc.copy === 'object' ? cc.copy : null;
+    if (src && !lock) {
+      // same framing as another panel, optionally tighter / wider (punch-in, axial cut, pull-back)
+      const spec = structuredClone(src);
+      if (cc.sizeDelta) spec.size = clamp(spec.size + cc.sizeDelta, 0, 4);
+      if (cc.zoom != null) spec.zoom = cc.zoom;
+      spec.poses = { ...(src.poses || {}), ...(cc.poses || {}) };
+      for (const key of ['hide', 'gaze', 'hold', 'place']) if (cc[key] != null) spec[key] = structuredClone(cc[key]);
+      shots.push({ spec, ...scoreShot(spec, world, ctx), ctx });
       continue;
     }
     const cands = [];
@@ -625,7 +758,8 @@ export function rerollPanel(prop, i, { world, style, seed }) {
 export function shotLabel(shot) {
   const sp = shot.spec;
   const role = ROLES[shot.ctx.role];
-  let cam = sp.type === 'ots' ? 'Over-shoulder' : sp.type === 'establish' ? 'Establishing' : sp.type === 'two' ? 'Two-shot' : SIZE_SHORT[sp.size];
+  let cam = sp.type === 'ots' ? 'Over-shoulder' : sp.type === 'establish' ? 'Establishing' : sp.type === 'two' ? 'Two-shot' : sp.type === 'pov' ? 'POV' : sp.type === 'free' ? 'Free camera'
+    : sp.zoom && sp.zoom < 0.8 && sp.size === 4 ? 'ECU' : sp.zoom && sp.zoom < 1 && sp.size === 1 ? 'Knee' : SIZE_SHORT[sp.size];
   if (sp.elev > 22) cam += ', high';
   else if (sp.elev < -10) cam += ', low';
   if (Math.abs(sp.dutch) > 3) cam += ', dutch';

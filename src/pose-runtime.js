@@ -243,6 +243,9 @@ export function resolveCast(world, spec, ctx) {
     const base = resolveId(ctx?.staging?.[i]) || compilePose('stand');
     o.pose = mergePoses(base, resolveId(spec?.poses?.[i]));
   });
+  for (const i of spec?.hide || []) if (out[i]) out[i].hidden = true;
+  // spec.face: {i: {expr, amount}} facial expression
+  for (const [i, f] of Object.entries(spec?.face || {})) if (out[i] && f) out[i].face = f;
   out.forEach((o, i) => {
     for (const side of ['left', 'right']) {
       const id = spec?.hold?.[i]?.[side];
@@ -272,7 +275,21 @@ export function castWithLooks(world, spec, ctx) {
     if (speaker >= 0) return first[speaker].headCenter;
     return first[i === 0 ? 1 : 0]?.headCenter;
   };
-  return cast.map((c, i) => ({ ...c, look: lookAngles(first[i], target(i), c.pose?.look ?? 1) }));
+  // spec.gaze: {i: 'partner' | 'camera' | 'forward' | 'down' | 'up' | 'away'}
+  const camDir = new THREE.Vector3(world.normal?.x || 0, 0, world.normal?.z ?? 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), ((spec?.az || 0) * Math.PI) / 180);
+  return cast.map((c, i) => {
+    const w = c.pose?.look ?? 1;
+    const g = spec?.gaze?.[i];
+    let look;
+    if (g === 'forward') look = null;
+    else if (g === 'down' || g === 'up') look = { yaw: 0, pitch: g === 'down' ? 0.45 : -0.45 };
+    else if (g === 'camera') look = lookAngles(first[i], first[i].headCenter.clone().add(camDir.clone().multiplyScalar(3)), 1);
+    else if (g === 'away') {
+      const l = lookAngles(first[i], target(i), 1);
+      look = l ? { yaw: -Math.sign(l.yaw || 1) * Math.min(1.1, Math.abs(l.yaw) + 0.6), pitch: 0.1 } : { yaw: 0.8, pitch: 0.1 };
+    } else look = lookAngles(first[i], target(i), w);
+    return { ...c, look };
+  });
 }
 
 // Build the posed world (heads, bounds, props) from a cast state.
@@ -289,7 +306,7 @@ export function worldFromCast(world, cast) {
       fwd: new THREE.Vector3(Math.sin(c.place.yaw), 0, Math.cos(c.place.yaw)),
       head: f.headCenter,
       headFwd: f.headFwd,
-      fk: f, pose: c.pose, look: c.look, props: [...(c.pose?.props || []), ...c.extraProps],
+      fk: f, pose: c.pose, look: c.look, props: c.hidden ? [] : [...(c.pose?.props || []), ...c.extraProps], hidden: !!c.hidden, face: c.face || null,
       center, extentY: size.y, extentXZ: Math.max(size.x, size.z),
     };
   });
@@ -324,6 +341,8 @@ export function lerpCast(A, B, t) {
       pose,
       look: a.look || b.look ? { yaw: lerp(la.yaw, lb.yaw), pitch: lerp(la.pitch, lb.pitch) } : null,
       extraProps: t < 0.5 ? a.extraProps : b.extraProps,
+      hidden: t < 0.5 ? a.hidden : b.hidden,
+      face: t < 0.5 ? a.face : b.face,
       locked: a.locked,
     };
   });

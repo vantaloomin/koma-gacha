@@ -5,6 +5,8 @@
 import { ShotSampler, layoutTimeline, clipAt, drawOpenPose, TRANSITION_SECONDS } from './motion.js';
 import { letterPanel } from './letter.js';
 import { encodeFrames } from './video-encode.js';
+import { drawEffects, hasBackEffect } from './effects.js';
+import { postProcess } from './renderer.js';
 
 export const VIDEO_SIZES = {
   '720p': { label: '1280 × 720 (16:9)', w: 1280, h: 720 },
@@ -150,8 +152,22 @@ export class VideoComposer {
       return;
     }
     const cam = kind === 'depth' ? camera.clone() : camera;
-    const img = this.sr.renderPosed(W, s.ctx, cam, w, h, kind, clip.chars);
-    g.drawImage(img, 0, 0, w, h);
+    // the panel's effect lines and tones carry over to its shot (render only; control videos stay clean)
+    const fx = kind === 'render' ? clip.fx?.effects : null;
+    const back = hasBackEffect(fx);
+    let fxOpts = null;
+    if (fx?.length) {
+      const P = s.analysis(u).people.find((p) => p.i === (fx.find((e) => e.centerIndex != null)?.centerIndex ?? s.specA.subject) && p.inFrame);
+      fxOpts = { box: { x: 0, y: 0, w, h }, center: { x: (P ? P.u : 0.5) * w, y: (P ? P.v : 0.45) * h }, s: w / VW, seed: `vfx|${k}` };
+    }
+    if (back) {
+      g.fillStyle = '#fff';
+      g.fillRect(0, 0, w, h);
+      drawEffects(g, fx, 'back', fxOpts);
+    }
+    const img = this.sr.renderPosed(W, s.ctx, cam, w, h, kind, clip.chars, { transparent: back });
+    g.drawImage(kind === 'render' ? postProcess(img, this.sr.post, Math.max(3, (w / VW) * 5)) : img, 0, 0, w, h);
+    if (fxOpts) drawEffects(g, fx, 'front', fxOpts);
     if (kind === 'render' && this.opts.lettering !== 'none') this.letter(g, k, u);
   }
 

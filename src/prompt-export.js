@@ -108,6 +108,8 @@ function describePanel(shot, chars, labels, script, tone) {
   const size = SIZES[sp.size]?.toLowerCase() || 'medium';
   const angle = sp.elev > 22 ? 'high angle looking down' : sp.elev < -10 ? 'low angle looking up' : 'eye level';
   const shotType = sp.type === 'ots' ? `over-the-shoulder shot past ${who(sp.other)} onto ${who(sp.subject)}`
+    : sp.type === 'pov' ? `point-of-view shot through ${who(sp.other)}'s eyes onto ${who(sp.subject)}`
+    : sp.type === 'free' ? 'camera as in the reference'
     : sp.type === 'two' ? `two-shot`
       : sp.type === 'establish' ? 'establishing shot'
         : `${size} of ${who(sp.subject)}`;

@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { CATALOG } from './props/catalog.js';
 import { MODELS } from './props/models.js';
+import { ARCHITECTURE } from './props/architecture.js';
 
 const DEG = Math.PI / 180;
 
@@ -20,6 +21,7 @@ export const MATERIALS = {
 const registry = new Map();
 export function registerProps(list) { for (const p of list) if (p?.id) registry.set(p.id, p); }
 registerProps(CATALOG.map((p) => (MODELS[p.id] ? { ...p, ...MODELS[p.id], primitive: p.parts } : p)));
+registerProps(ARCHITECTURE);
 export const getProp = (id) => registry.get(id) || null;
 export const listProps = (cat = null) => [...registry.values()].filter((p) => !cat || p.cat === cat);
 export const propCategories = () => [...new Set([...registry.values()].map((p) => p.cat))];
@@ -138,11 +140,13 @@ export function buildProp(id, style = 'shaded') {
     mesh.position.set(pos[0], pos[1], pos[2]);
     mesh.rotation.set(rot[0] * DEG, rot[1] * DEG, rot[2] * DEG);
     mesh.userData.matKey = mat;
-    const o = new THREE.Mesh(mesh.geometry, ink);
-    o.scale.setScalar(1.05);
-    o.visible = style === 'toon' || style === 'lineart';
-    o.userData.outline = true;
-    mesh.add(o);
+    if (!def.noOutline) {
+      const o = new THREE.Mesh(mesh.geometry, ink);
+      o.scale.setScalar(1.05);
+      o.visible = style === 'toon' || style === 'lineart';
+      o.userData.outline = true;
+      mesh.add(o);
+    }
     g.add(mesh);
   }
   // swap in the model file when it's available (otherwise keep the primitive version)
@@ -216,4 +220,7 @@ export function placeProp(g, use, person, figure) {
     g.position.set(use.x || 0, use.y || 0, use.z || 0);
     g.quaternion.setFromAxisAngle(UP, (use.yaw || 0) * DEG).multiply(rq);
   }
+  // pooled instances are reused, so the scale is set on every placement
+  if (use.scale) g.scale.set(use.scale[0], use.scale[1], use.scale[2]);
+  else g.scale.setScalar(def.scale || 1);
 }

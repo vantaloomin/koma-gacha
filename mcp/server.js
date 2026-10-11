@@ -12,6 +12,7 @@ import zlib from 'node:zlib';
 import { PDFDocument } from 'pdf-lib';
 import { Engine, dataUrlToBuffer } from './engine.js';
 import { GUIDE, TOPICS } from './guide.js';
+import { roomProps, ROOMS } from '../src/rooms.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const COMICS = path.resolve(process.env.NG_COMICS_DIR || path.join(ROOT, 'comics'));
@@ -82,7 +83,7 @@ function apiPage(c, page) {
   }
   return {
     staging,
-    sceneProps: (page.sceneProps || []).map((sp) => ({ id: sp.prop, x: sp.x || 0, z: sp.z || 0, y: sp.y || 0, yaw: sp.yaw || 0 })),
+    sceneProps: [...(page.room ? roomProps(page.room, page.roomVariant || 0) : []), ...(page.sceneProps || []).map((sp) => ({ id: sp.prop, x: sp.x || 0, z: sp.z || 0, y: sp.y || 0, yaw: sp.yaw || 0 }))],
     layout: { ...page.layout, format: c.format, dir: c.dir },
     positions: page.positions, tone: page.tone, intensity: page.intensity, style: page.style, seed: page.seed,
     panels: page.panels.map((p) => ({
@@ -91,11 +92,13 @@ function apiPage(c, page) {
       lock: p.lock && p.lock !== 'none' ? p.lock : undefined,
       spec: p.spec,
       motion: p.motion,
+      effects: p.effects?.map((e) => ({ ...e, centerIndex: e.center && idx(e.center) >= 0 ? idx(e.center) : undefined })),
+      breakout: p.breakout,
       script: p.script ? {
         caption: p.script.caption,
         sfx: p.script.sfx,
         dialogue: (p.script.dialogue || []).map((d) => ({
-          text: d.text, kind: d.kind,
+          text: d.text, kind: d.kind, ...(d.off ? { off: true } : {}), ...(d.shape ? { shape: d.shape } : {}),
           speaker: d.speaker == null ? null : idx(d.speaker) >= 0 ? idx(d.speaker) : -1,
         })),
       } : undefined,
@@ -342,6 +345,11 @@ const LayoutZ = z.object({
   key_panel: z.number().int().min(1).optional().describe('Pick a layout where panel N (reading order) is clearly the biggest: put the key moment there'),
 });
 
+const EFFECT_LABELS = ['Focus lines', 'Light rays', 'Beta flash', 'Uni flash', 'Speed lines', 'Curved speed lines', 'Wind lines', 'Vertical gloom lines', 'Rain', 'Cross-hatching', 'Cross-hatch gradient', 'Black-edge hatching', 'Rope hatching', 'Rope hatching gradient', 'Radial rope hatching', 'Halftone dots', 'Line tone', 'Gradient tone', 'Pattern tone', 'Stipple', 'Sand grain tone', 'Sparkles', 'Flower background', 'Hearts', 'Petals', 'Bubbles', 'Snow'];
+const camel = (s) => String(s).toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9]+/g, ' ').trim().replace(/ (.)/g, (_, ch) => ch.toUpperCase());
+const EFFECT_IDS = new Set(EFFECT_LABELS.map(camel));
+const effectId = (name) => (EFFECT_IDS.has(camel(name)) ? camel(name) : EFFECT_IDS.has(name) ? name : null);
+
 // Tool-facing layout options -> generator params (only keys that were given).
 function lpFromArgs(l = {}) {
   const out = {};
@@ -377,10 +385,11 @@ const PANEL = z.number().int().min(1).describe('Panel number in reading order (1
 
 // ---------------------------------------------------------------- server
 
-const server = new McpServer({ name: 'koma-comics', version: '1.5.0' }, {
+const server = new McpServer({ name: 'koma-comics', version: '2.0.0' }, {
   instructions: `Make comics with the Koma engine (koma = comic panel).
+FASTEST START: comic_from_plot builds a whole comic from a script (guide plot).
 WORKFLOW: create_comic (characters with heights + descriptions) → add_page (cast, script per panel, layout) → review the preview → edit_panel / set_staging / roll_page to direct → render_page diagnostics=true to check → export_comic or export_image_prompt.
-CRAFT CHEAT SHEET (call guide for details: shots, layouts, pacing, acting, lettering, groups, workflow, video, image_prompts):
+CRAFT CHEAT SHEET (call guide for details: shots, layouts, pacing, acting, lettering, groups, workflow, plot, video, image_prompts):
 - One beat per panel; 0–2 balloons and ~25 words per panel. Silent panels let emotion land.
 - Open a scene with an establishing shot; move closer as emotion rises.
 - Put the key moment in the biggest panel: layout.key_panel = N (bleed 'key' lets it run off the page).
@@ -403,7 +412,7 @@ const tool = (name, description, inputSchema, fn) => server.registerTool(name, {
 });
 
 tool('guide', 'Visual-storytelling guidance for this tool: which shot, layout, pacing, pose or lettering choice to make and how to express it in the tool parameters. Call it when unsure how to direct a page.', {
-  topic: z.enum(TOPICS).optional().describe('overview (default), shots, layouts, pacing, acting, lettering, groups, workflow, video, image_prompts'),
+  topic: z.enum(TOPICS).optional().describe('overview (default), shots, layouts, pacing, acting, lettering, groups, workflow, plot, video, image_prompts'),
 }, async (a) => ({ content: [text(GUIDE[a.topic || 'overview'])] }));
 
 tool('list_comics', 'List comic projects on disk.', {}, async () => {
@@ -478,7 +487,7 @@ tool('add_page', 'Add a page: picks a layout, rolls the camera gacha, keeps the 
   tone: z.enum(TONES).optional(),
   intensity: z.enum(['strong', 'normal', 'quiet']).optional(),
   draw_style: z.enum(['safe', 'balance', 'bold']).optional().describe('Gacha randomness'),
-  render_style: z.enum(['shaded', 'toon', 'silhouette', 'lineart']).optional(),
+  render_style: z.enum(['shaded', 'toon', 'tone', 'grayscale', 'silhouette', 'lineart']).optional(),
   insert_at: z.number().int().min(1).optional().describe('Page position (default: append)'),
   seed: z.string().optional(),
   staging: z.record(z.string(), z.string().nullable()).optional().describe('Page-level base pose per character name, e.g. {"Ada": "sitChair"} (null = standing). Panel gestures overlay it.'),
@@ -598,6 +607,9 @@ tool('edit_panel', 'Direct one panel: camera (shot type, size, angle), poses per
   focus: z.string().optional(),
   lock: z.enum(['none', 'all', 'camera', 'pose']).optional().describe('all = keep everything on reroll; camera/pose = keep only that part'),
   reroll: z.boolean().optional().describe('Reroll this panel\'s camera (before applying any camera edits)'),
+  effects: z.array(z.union([z.string(), z.object({ effect: z.string(), density: z.number().min(5).max(100).optional(), center: z.string().optional() })])).optional()
+    .describe(`Effect lines and tones for this panel (replaces any); [] clears. ${EFFECT_LABELS.join(', ')}`),
+  breakout: z.boolean().optional().describe('Draw the panel\'s subject over the panel border'),
 }, async (a) => {
   const c = load(a.comic_id);
   const page = getPage(c, a.page);
@@ -655,6 +667,17 @@ tool('edit_panel', 'Direct one panel: camera (shot type, size, angle), poses per
     }
     if (!a.lock && !a.camera) p.lock = 'all';
   }
+  if (a.effects) {
+    p.effects = a.effects.map((e) => {
+      const o = typeof e === 'string' ? { effect: e } : e;
+      const id = effectId(o.effect);
+      if (!id) throw new Error(`Unknown effect "${o.effect}". Effects: ${EFFECT_LABELS.join(', ')}.`);
+      if (o.center) idx(o.center);
+      return { id, ...(o.density ? { density: o.density } : {}), ...(o.center ? { center: o.center } : {}) };
+    });
+    if (!p.effects.length) delete p.effects;
+  }
+  if (a.breakout !== undefined) p.breakout = a.breakout || undefined;
   if (a.lock) p.lock = a.lock === 'none' ? undefined : a.lock;
   return previewResult(c, a.page);
 });
@@ -678,7 +701,7 @@ tool('render_page', 'Render a page to PNG (saved to disk) and return a preview. 
   comic_id: ID, page: PAGE,
   width: z.number().int().min(400).max(4000).optional().describe('Saved PNG width in px (default 1400)'),
   diagnostics: z.boolean().optional(),
-  render_style: z.enum(['shaded', 'toon', 'silhouette', 'lineart']).optional().describe('Also becomes the page default'),
+  render_style: z.enum(['shaded', 'toon', 'tone', 'grayscale', 'silhouette', 'lineart']).optional().describe('Also becomes the page default'),
 }, async (a) => {
   const c = load(a.comic_id);
   if (a.render_style) getPage(c, a.page).renderStyle = a.render_style;
@@ -869,11 +892,13 @@ tool('set_staging', 'Set how the scene is blocked for the whole page: base poses
   staging: z.record(z.string(), z.string().nullable()).optional().describe('Page-level base pose per character name, e.g. {"Ada": "sitChair"} (null = standing). Panel gestures overlay it.'),
   pair_staging: z.object({ pose: z.string(), a: z.string(), b: z.string() }).nullable().optional().describe('Page-level pair pose (e.g. a hug) between two cast members'),
   scene_props: z.array(z.object({ prop: z.string(), x: z.number(), z: z.number(), y: z.number().optional(), yaw: z.number().optional() })).optional().describe('Set dressing on the floor plan (metres, degrees); see list_props'),
+  room: z.enum([...Object.keys(ROOMS), 'none']).optional().describe('A ready-made set around the cast: walls, windows, floor and furniture (none removes it)'),
   reroll: z.boolean().optional().describe('Reroll the cameras for the new staging (default false)'),
 }, async (a) => {
   const c = load(a.comic_id);
   const page = getPage(c, a.page);
   applyStaging(c, page, a);
+  if (a.room) page.room = a.room === 'none' ? undefined : a.room;
   if (a.reroll) await rollPage(c, page);
   return previewResult(c, a.page);
 });
@@ -943,6 +968,60 @@ tool('export_image_prompt', 'Export a page or one panel as an image-model packag
   const img = writeFile(c.id, 'export/prompts', `${base}-reference.png`, dataUrlToBuffer(r.png));
   const txt = writeFile(c.id, 'export/prompts', `${base}-prompt.txt`, r.prompt);
   return { content: [text(`Reference: ${img}\nPrompt: ${txt}\nSuggested output size: ${r.size}\n\n${r.prompt}`), imageContent(r.png)] };
+});
+
+// ---------------------------------------------------------------- plot
+
+tool('comic_from_plot', 'Build a whole comic from a plot (script): cast, scenes, pages and one line per panel with staging tags, e.g. `1: Mia "Hey!" Ken [Close-up, Low angle]`. Koma picks each page\'s layout from the panel tags and page turns, stages every panel and letters it. Creates a new comic, or replaces the pages of comic_id. See guide plot for the syntax and word list. Afterwards every MCP tool (edit_panel, set_shot_motion, export_comic, export_video…) works on the result.', {
+  plot: z.string().describe('The plot text'),
+  comic_id: z.string().optional().describe('Replace this comic\'s pages (characters are kept and extended); omit to create a new comic'),
+  seed: z.string().optional().describe('Change it to get other layouts and staging'),
+}, async (a) => {
+  const existing = a.comic_id ? load(a.comic_id) : null;
+  const r = await engine.call('comicalize', { plot: a.plot, opts: { seed: a.seed || 'PLOT' }, width: 520, caps: existing?.caps !== false });
+  const noticeText = r.notices.map((n) => `  [${n.level}] line ${n.line}: ${n.text}`).join('\n');
+  if (!r.pages.length) throw new Error(`The plot has no pages to build.${noticeText ? '\n' + noticeText : ''}`);
+  let c = existing;
+  if (!c) {
+    const title = r.title || 'Untitled';
+    let id = slug(title);
+    let k = 2;
+    while (fs.existsSync(dir(id))) id = `${slug(title)}-${k++}`;
+    c = { id, title, caps: true, adultContent: false, characters: [], pages: [], created: new Date().toISOString() };
+  }
+  c.format = r.format;
+  c.dir = r.dir;
+  c.plot = a.plot;
+  for (const ch of r.chars) {
+    const cur = findChar(c, ch.name);
+    if (cur) cur.height = ch.height;
+    else c.characters.push({ name: ch.name, height: ch.height, color: ch.color, vrm: null, adult: true, description: '' });
+  }
+  const toNames = (s, cast) => s && {
+    caption: s.caption || undefined, sfx: s.sfx?.length ? s.sfx : undefined,
+    dialogue: (s.dialogue || []).map((d) => ({ speaker: d.speaker == null ? null : cast[d.speaker] ?? '(off panel)', text: d.text, kind: d.kind, ...(d.off ? { off: true } : {}), ...(d.shape ? { shape: d.shape } : {}) })),
+  };
+  c.pages = r.pages.map((p) => ({
+    layout: { ...p.layout, removed: [] }, cast: p.cast, positions: p.positions, tone: 'auto', intensity: 'normal', style: 'balance', room: p.room || undefined, roomVariant: p.background?.no || undefined,
+    renderStyle: 'shaded', seed: `${a.seed || 'PLOT'}|${p.number}`, proposals: [], chosen: 0,
+    panels: p.panels.map((pn) => ({ role: pn.role, focus: p.cast[pn.focus], spec: pn.spec, lock: 'all', script: toNames(pn.script, p.cast), effects: pn.effects?.length ? pn.effects : undefined, breakout: pn.breakout || undefined })),
+  }));
+  for (const page of c.pages) await checkPoses(c, page);
+  save(c);
+  const lines = r.pages.map((p) => `  p.${p.number} (${p.side}${p.turnAfter ? ', page turn after' : ''}) ${p.layout.preset} #${p.layout.index} — ${p.panels.length} panels, ${p.total} pts: ${p.panels.map((pn) => pn.label.split(' · ').pop()).join(' / ')}`);
+  const images = r.pages.slice(0, 8).map((p) => imageContent(p.png));
+  return {
+    content: [
+      text(`${existing ? 'Rebuilt' : 'Created'} "${c.title}" (${c.id}) from the plot: ${r.pages.length} pages, ${c.characters.length} characters.\n${lines.join('\n')}${noticeText ? `\n\nNotices:\n${noticeText}` : ''}${r.pages.length > 8 ? '\n(Previews show the first 8 pages; render_page shows any page.)' : ''}`),
+      ...images,
+    ],
+  };
+});
+
+tool('get_plot', 'Return the plot a comic was built from (comic_from_plot), to edit and rebuild.', { comic_id: ID }, async (a) => {
+  const c = load(a.comic_id);
+  if (!c.plot) throw new Error(`"${c.id}" wasn't built from a plot.`);
+  return { content: [text(c.plot)] };
 });
 
 // ---------------------------------------------------------------- video

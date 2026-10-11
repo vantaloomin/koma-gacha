@@ -45,19 +45,32 @@ function cloudBump(rx, ry) {
   const n = Math.max(9, Math.round((rx + ry) / 14));
   return ((Math.PI * (rx + ry)) / n) * 0.62;
 }
+// Balloon kinds -> default outline; a line's `shape` overrides it.
+// Shapes: ellipse rect cloud thought wave electronic fuzz aura sparkle spike explosion tremble flash urchin fude crack
+const KIND_SHAPE = { speech: 'ellipse', whisper: 'ellipse', shout: 'spike', thought: 'cloud', wavy: 'wave', electronic: 'electronic', eerie: 'fuzz' };
+const SPIKY = { spike: 1.22, explosion: 1.36, urchin: 1.2, flash: 1.3, crack: 1.24, electronic: 1.1 };
+const shapeOf = (item) => item.shape || KIND_SHAPE[item.kind] || 'ellipse';
+const isCloud = (item) => ['cloud', 'thought'].includes(shapeOf(item));
+const isSharp = (item) => !!SPIKY[shapeOf(item)] && shapeOf(item) !== 'electronic';
+
 function extent(item) {
-  if (item.kind === 'thought') {
+  const sh = shapeOf(item);
+  if (sh === 'cloud' || sh === 'thought') {
     const br = cloudBump(item.rx, item.ry);
     return { ex: item.rx + br * 0.65, ey: item.ry + br * 0.65 };
   }
-  if (item.kind === 'shout') return { ex: item.rx * 1.22, ey: item.ry * 1.22 };
+  if (SPIKY[sh]) return { ex: item.rx * SPIKY[sh], ey: item.ry * SPIKY[sh] };
+  if (sh === 'aura' || sh === 'sparkle') return { ex: item.rx * 1.14 + 2, ey: item.ry * 1.14 + 2 };
+  if (['wave', 'fuzz', 'tremble', 'fude'].includes(sh)) return { ex: item.rx * 1.06 + 2, ey: item.ry * 1.06 + 2 };
   return { ex: item.rx + 2, ey: item.ry + 2 };
 }
 
 // Every way the text could be set (font size x wrap width), largest font first, that fits the panel.
 function balloonFits(ctx, line, b, caps) {
   const kind = line.kind || 'speech';
-  const base = kind === 'shout' ? 21 : kind === 'whisper' ? 16 : 18;
+  const shape = line.shape || KIND_SHAPE[kind] || 'ellipse';
+  const loud = kind === 'shout' || ['spike', 'explosion', 'urchin', 'crack'].includes(shape);
+  const base = loud ? 21 : kind === 'whisper' ? 16 : 18;
   const text = caps ? String(line.text).toUpperCase() : String(line.text);
   const short = b.h < b.w * 0.5;
   const widths = (short ? [0.7, 0.55, 0.42, 0.3] : [0.45, 0.6, 0.34, 0.75]).map((f) => Math.max(70, Math.min(330, b.w * f)));
@@ -68,8 +81,8 @@ function balloonFits(ctx, line, b, caps) {
       const lines = wrap(ctx, text, maxW);
       const tw = Math.max(...lines.map((l) => ctx.measureText(l).width));
       const th = lines.length * fs * LINE;
-      const pad = kind === 'thought' ? 12 : kind === 'shout' ? 14 : 9;
-      const item = { kind, fs, lines, tw, th, rx: (tw / 2) * 1.3 + pad, ry: (th / 2) * 1.34 + pad };
+      const pad = shape === 'cloud' || shape === 'thought' ? 12 : SPIKY[shape] ? 14 : 9;
+      const item = { kind, shape, fs, lines, tw, th, rx: (tw / 2) * 1.3 + pad, ry: (th / 2) * 1.34 + pad };
       const { ex, ey } = extent(item);
       if (2 * ex <= b.w - 2 * MARGIN && 2 * ey <= b.h - 2 * MARGIN) out.push(item);
     }
@@ -81,7 +94,7 @@ function balloonFits(ctx, line, b, caps) {
     const lines = wrap(ctx, text, Math.max(60, b.w * 0.8));
     const tw = Math.max(...lines.map((l) => ctx.measureText(l).width));
     const th = lines.length * 11 * LINE;
-    out.push({ kind, fs: 11, lines, tw, th, rx: (tw / 2) * 1.3 + 8, ry: (th / 2) * 1.34 + 8 });
+    out.push({ kind, shape, fs: 11, lines, tw, th, rx: (tw / 2) * 1.3 + 8, ry: (th / 2) * 1.34 + 8 });
   }
   return out;
 }
@@ -166,6 +179,138 @@ function cloudPath(ctx, x, y, rx, ry, s) {
   ctx.ellipse(x * s, y * s, rx * 0.8 * s, ry * 0.8 * s, 0, 0, Math.PI * 2);
 }
 
+// A closed outline from a radius function r(angle) (1 = the text ellipse).
+function radialPath(ctx, x, y, rx, ry, s, n, r) {
+  for (let i = 0; i <= n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    const k = r(a, i);
+    const px = x + Math.cos(a) * rx * k;
+    const py = y + Math.sin(a) * ry * k;
+    i ? ctx.lineTo(px * s, py * s) : ctx.moveTo(px * s, py * s);
+  }
+  ctx.closePath();
+}
+
+function roundRectPath(ctx, x, y, rx, ry, s) {
+  const w = rx * 1.84;
+  const h = ry * 1.7;
+  const r = Math.min(12, h * 0.3);
+  ctx.roundRect((x - w / 2) * s, (y - h / 2) * s, w * s, h * s, r * s);
+}
+
+function shapePath(ctx, bl, s, rng) {
+  const { x, y, rx, ry } = bl;
+  switch (shapeOf(bl)) {
+    case 'rect': return roundRectPath(ctx, x, y, rx, ry, s);
+    case 'cloud': case 'thought': return cloudPath(ctx, x, y, rx, ry, s);
+    case 'spike': return shoutPath(ctx, x, y, rx, ry, s, rng);
+    case 'explosion': return radialPath(ctx, x, y, rx, ry, s, 26, (a, i) => (i % 2 ? 0.96 : 1.2 + rng.range(0, 0.2)));
+    case 'urchin': return radialPath(ctx, x, y, rx, ry, s, 64, (a, i) => (i % 2 ? 0.98 : 1.18));
+    case 'crack': return radialPath(ctx, x, y, rx, ry, s, 20, (a, i) => (i % 2 ? 0.92 + rng.range(0, 0.06) : 1.08 + rng.range(0, 0.16)));
+    case 'electronic': return radialPath(ctx, x, y, rx, ry, s, 30, (a, i) => (i % 2 ? 0.97 : 1.07));
+    case 'wave': return radialPath(ctx, x, y, rx, ry, s, 96, (a) => 1 + 0.045 * Math.sin(a * 14));
+    case 'tremble': return radialPath(ctx, x, y, rx, ry, s, 80, () => 1 + rng.range(-0.02, 0.025));
+    case 'fuzz': return radialPath(ctx, x, y, rx, ry, s, 120, (a) => 1 + 0.05 * Math.abs(Math.sin(a * 18)));
+    default: return ellipsePath(ctx, x, y, rx, ry, s);
+  }
+}
+
+// Decorations drawn around some outlines (flash rays, aura ring, sparkles).
+function shapeDecor(ctx, bl, s, rng, lw) {
+  const sh = shapeOf(bl);
+  const { x, y, rx, ry } = bl;
+  ctx.save();
+  ctx.strokeStyle = '#111';
+  if (sh === 'flash') {
+    for (let i = 0; i < 44; i++) {
+      const a = (i / 44) * Math.PI * 2 + rng.range(-0.04, 0.04);
+      const r0 = 1.06;
+      const r1 = 1.16 + rng.range(0, 0.14);
+      ctx.lineWidth = rng.range(0.8, 1.8) * s;
+      ctx.beginPath();
+      ctx.moveTo((x + Math.cos(a) * rx * r0) * s, (y + Math.sin(a) * ry * r0) * s);
+      ctx.lineTo((x + Math.cos(a) * rx * r1) * s, (y + Math.sin(a) * ry * r1) * s);
+      ctx.stroke();
+    }
+  } else if (sh === 'aura') {
+    ctx.lineWidth = 1.2 * s;
+    ctx.setLineDash([3 * s, 3 * s]);
+    ctx.beginPath();
+    ellipsePath(ctx, x, y, rx * 1.12, ry * 1.12, s);
+    ctx.stroke();
+  } else if (sh === 'sparkle') {
+    for (let i = 0; i < 6; i++) {
+      const a = rng.range(0, Math.PI * 2);
+      const px = x + Math.cos(a) * rx * 1.08;
+      const py = y + Math.sin(a) * ry * 1.08;
+      const r = rng.range(3, 6);
+      ctx.beginPath();
+      for (let k = 0; k < 8; k++) {
+        const b = (k / 8) * Math.PI * 2;
+        const rr = k % 2 ? r * 0.25 : r;
+        ctx.lineTo((px + Math.cos(b) * rr) * s, (py + Math.sin(b) * rr) * s);
+      }
+      ctx.closePath();
+      ctx.fillStyle = '#fff';
+      ctx.lineWidth = lw * 0.5 * s;
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+// Brush ("fude") outline: a ring whose width swells and thins around the balloon.
+function fudeRing(ctx, bl, s, rng) {
+  const n = 90;
+  const ph = rng.range(0, Math.PI * 2);
+  const outer = (a) => 1 + (2.2 + 2.6 * (0.5 + 0.5 * Math.sin(2 * a + ph))) / Math.max(bl.rx, bl.ry);
+  ctx.beginPath();
+  radialPath(ctx, bl.x, bl.y, bl.rx, bl.ry, s, n, (a) => outer(a));
+  radialPath(ctx, bl.x, bl.y, bl.rx, bl.ry, s, n, () => 1);
+  ctx.fillStyle = '#111';
+  ctx.fill('evenodd');
+}
+
+// Linked balloons (one speaker, one breath): a short neck between the two outlines.
+function drawLink(ctx, a, b, s) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const d = Math.hypot(dx, dy) || 1;
+  const ux = dx / d;
+  const uy = dy / d;
+  const edge = (bl) => 1 / Math.sqrt((ux / bl.rx) ** 2 + (uy / bl.ry) ** 2);
+  const p0 = [a.x + ux * edge(a) * 0.86, a.y + uy * edge(a) * 0.86];
+  const p1 = [b.x - ux * edge(b) * 0.86, b.y - uy * edge(b) * 0.86];
+  ctx.save();
+  ctx.lineCap = 'butt';
+  ctx.strokeStyle = '#111';
+  ctx.lineWidth = 16 * s;
+  ctx.beginPath();
+  ctx.moveTo(p0[0] * s, p0[1] * s);
+  ctx.lineTo(p1[0] * s, p1[1] * s);
+  ctx.stroke();
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 11 * s;
+  ctx.stroke();
+  ctx.restore();
+}
+
+// Lightning-bolt tail for electronic (phone, radio) voices.
+function boltTail(ctx, bl, tx, ty, s) {
+  const ang = Math.atan2(ty - bl.y, tx - bl.x);
+  const ex = Math.cos(ang);
+  const ey = Math.sin(ang);
+  const edge = 1 / Math.sqrt((ex / bl.rx) ** 2 + (ey / bl.ry) ** 2);
+  const len = Math.max(18, Math.min(Math.hypot(tx - bl.x, ty - bl.y) - edge, 54));
+  const nx = -ey;
+  const ny = ex;
+  const P = (along, side) => [(bl.x + ex * (edge * 0.8 + along) + nx * side) * s, (bl.y + ey * (edge * 0.8 + along) + ny * side) * s];
+  const pts = [P(0, 7), P(len * 0.45, 5), P(len * 0.38, -2), P(len + edge * 0.2, 0), P(len * 0.5, 4), P(len * 0.56, -3), P(0, -7)];
+  pts.forEach(([px, py], i) => (i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
+  ctx.closePath();
+}
+
 // Tail polygon from the balloon toward a target point.
 function tailPath(ctx, bl, tx, ty, s, sharp) {
   const ang = Math.atan2(ty - bl.y, tx - bl.x);
@@ -189,32 +334,37 @@ function tailPath(ctx, bl, tx, ty, s, sharp) {
 }
 
 function drawBalloon(ctx, bl, s, target, seed, blank = false) {
-  const rng = makeRng(seed);
   const lw = 2.4;
+  const cloud = isCloud(bl);
+  const sh = shapeOf(bl);
+  // each pass redraws the same outline, so it reseeds the jitter
   const shape = (c) => {
     c.beginPath();
-    if (bl.kind === 'shout') shoutPath(c, bl.x, bl.y, bl.rx, bl.ry, s, rng);
-    else if (bl.kind === 'thought') cloudPath(c, bl.x, bl.y, bl.rx, bl.ry, s);
-    else ellipsePath(c, bl.x, bl.y, bl.rx, bl.ry, s);
+    shapePath(c, bl, s, makeRng(seed));
   };
   const tail = (c) => {
-    if (!target || bl.kind === 'thought') return;
+    if (!target || cloud) return;
     c.beginPath();
-    tailPath(c, bl, target.x, target.y, s, bl.kind === 'shout');
+    if (sh === 'electronic') boltTail(c, bl, target.x, target.y, s);
+    else tailPath(c, bl, target.x, target.y, s, isSharp(bl));
   };
   ctx.save();
-  ctx.lineJoin = 'round';
+  ctx.lineJoin = sh === 'electronic' || isSharp(bl) ? 'miter' : 'round';
   ctx.strokeStyle = '#111';
   ctx.fillStyle = '#fff';
   ctx.lineWidth = lw * 2 * s;
+  shapeDecor(ctx, bl, s, makeRng(`${seed}|decor`), lw);
   if (bl.kind === 'whisper') ctx.setLineDash([7 * s, 5 * s]);
+  if (bl.kind === 'eerie') ctx.strokeStyle = '#333';
   // stroke at double width, then fill: the fill hides the inner half and the seam
-  shape(ctx); ctx.stroke();
-  tail(ctx); if (target && bl.kind !== 'thought') ctx.stroke();
+  if (sh === 'fude') { ctx.lineWidth = lw * s; shape(ctx); ctx.stroke(); }
+  else { shape(ctx); ctx.stroke(); }
+  tail(ctx); if (target && !cloud) ctx.stroke();
   ctx.setLineDash([]);
   shape(ctx); ctx.fill();
-  tail(ctx); if (target && bl.kind !== 'thought') ctx.fill();
-  if (bl.kind === 'thought' && target) {
+  tail(ctx); if (target && !cloud) ctx.fill();
+  if (sh === 'fude') fudeRing(ctx, bl, s, makeRng(`${seed}|fude`));
+  if (cloud && target) {
     const ang = Math.atan2(target.y - bl.y, target.x - bl.x);
     const { ex } = extent(bl);
     const edge = 1 / Math.sqrt((Math.cos(ang) / ex) ** 2 + (Math.sin(ang) / (extent(bl).ey)) ** 2);
@@ -229,8 +379,8 @@ function drawBalloon(ctx, bl, s, target, seed, blank = false) {
     });
   }
   if (blank) { ctx.restore(); return; }
-  ctx.fillStyle = bl.kind === 'whisper' ? '#444' : '#111';
-  ctx.font = `${bl.kind === 'whisper' ? 'italic ' : ''}700 ${bl.fs * s}px ${FONT}`;
+  ctx.fillStyle = bl.kind === 'whisper' || bl.kind === 'eerie' ? '#444' : '#111';
+  ctx.font = `${bl.kind === 'whisper' || bl.kind === 'eerie' ? 'italic ' : ''}700 ${bl.fs * s}px ${FONT}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   const lh = bl.fs * LINE;
@@ -360,13 +510,18 @@ export function letterPanel(ctx, s, pn, shot, script, { dir = 'rtl', caps = true
   const lines = (script.dialogue || []).map((line, k) => ({ line, k })).filter(({ line }) => line?.text);
   const ordered = [...lines.filter((x) => x.line.pos), ...lines.filter((x) => !x.line.pos)];
   let prevR = null;
+  let lastBl = null;
   for (const { line, k } of ordered) {
     const fits = balloonFits(ctx, line, b, caps);
     const head = line.speaker != null && line.speaker >= 0 ? headOf[line.speaker] : null;
+    // a linked balloon sits next to the previous one from the same speaker and has no tail of its own
+    const linkTo = line.linked && lastBl && lastBl.speaker === line.speaker ? lastBl : null;
     let target = null;
-    if (head) {
+    if (linkTo) {
+      target = { x: linkTo.x + (dir === 'rtl' ? -1 : 1) * linkTo.rx * 0.6, y: linkTo.y + linkTo.ry * 1.6 };
+    } else if (head && !line.off) {
       target = head.visible ? { x: head.x, y: head.y - head.r * 0.2 } : { x: clampTo(head.x, b.x - 40, b.x + b.w + 40), y: clampTo(head.y, b.y - 40, b.y + b.h + 40) };
-    } else if (line.speaker === -1) {
+    } else if (line.speaker === -1 || line.off) {
       target = { x: dir === 'rtl' ? b.x + b.w + 60 : b.x - 60, y: b.y + b.h * 0.3 }; // off-panel voice
     }
     let item = fits[0];
@@ -399,7 +554,12 @@ export function letterPanel(ctx, s, pn, shot, script, { dir = 'rtl', caps = true
     obstacles.push({ type: 'ellipse', x: bl.x, y: bl.y, ex, ey });
     // no tail if the speaker's head is under the balloon or right next to it
     if (target && Math.hypot(target.x - bl.x, target.y - bl.y) < Math.max(bl.rx, bl.ry) * 0.9) target = null;
+    if (linkTo) {
+      drawLink(ctx, linkTo, bl, s);
+      target = null;
+    }
     drawBalloon(ctx, bl, s, line.speaker == null ? null : target, `${seed}|${k}`, blank);
+    lastBl = { ...bl, speaker: line.speaker };
     hits.push({ kind: 'line', index: k, x: bl.x, y: bl.y, ex, ey });
   }
 

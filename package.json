@@ -3,7 +3,7 @@
   "private": true,
   "description": "Local comic storyboarding: panel layouts, camera gacha on 3D mannequins, poses, props, lettering, print and image-prompt export, and an MCP server for building whole comics.",
   "license": "MIT",
-  "version": "1.5.0",
+  "version": "2.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite --port 6170 --strictPort",
@@ -11,7 +11,8 @@
     "preview": "vite preview --port 6170 --strictPort",
     "mcp": "node mcp/server.js",
     "test:mcp": "node mcp/test-client.js",
-    "test:video": "node mcp/test-video.js"
+    "test:video": "node mcp/test-video.js",
+    "test:plot": "node mcp/test-plot.js && node mcp/test-plot-mcp.js"
   },
   "devDependencies": {
     "vite": "^8.3.3"

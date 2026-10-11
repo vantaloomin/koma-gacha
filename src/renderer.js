@@ -4,14 +4,25 @@
 import * as THREE from 'three';
 import { computeCamera, shotLabel } from './gacha.js';
 import { posedWorld } from './pose-runtime.js';
-import { buildProp, placeProp, setPropStyle } from './props.js';
+import { buildProp, placeProp, setPropStyle, getProp } from './props.js';
 import { extendPoly } from './print.js';
+import { drawEffects, hasBackEffect } from './effects.js';
+
+// Where effect lines converge: the effect's named center, else the panel subject's face, else the panel centre.
+function fxCenter(shot, b, s, fx) {
+  const want = fx.find((e) => e.centerIndex != null)?.centerIndex;
+  const people = shot.analysis?.people || [];
+  const P = people.find((p) => p.i === (want ?? shot.spec.subject) && p.inFrame) || people.find((p) => p.inFrame);
+  const u = P ? Math.min(0.9, Math.max(0.1, P.u)) : 0.5;
+  const v = P ? Math.min(0.9, Math.max(0.1, P.v)) : 0.45;
+  return { x: (b.x + u * b.w) * s, y: (b.y + v * b.h) * s };
+}
 
 const CHAR_COLORS_FALLBACK = ['#e2735f', '#5a8fd8', '#6bb86b'];
 
 export class StoryRenderer {
   constructor() {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: true });
     this.renderer.setPixelRatio(1);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.scene = new THREE.Scene();
@@ -28,6 +39,9 @@ export class StoryRenderer {
     this.scene.add(this.floor);
     this.figures = [];
     this.style = 'shaded';
+    this.baseStyle = 'shaded';
+    this.post = null; // 2D finish for 'tone' / 'grayscale' (rendered as toon underneath)
+    this.only = null; // render just this cast member (breakout figures)
     this.propLayer = new THREE.Group();
     this.scene.add(this.propLayer);
     this.propPool = new Map();
@@ -38,15 +52,20 @@ export class StoryRenderer {
     this.figures = figures;
     figures.forEach((f, i) => {
       this.scene.add(f.root);
-      f.setStyle(this.style, chars?.[i]?.color);
+      f.setStyle(this.baseStyle, chars?.[i]?.color);
     });
   }
 
+  // Styles: shaded, toon, silhouette, lineart, plus 'tone' (screentone + lines) and 'grayscale' (grey + lines),
+  // which render as toon and get a 2D finish in drawPage (see postProcess).
   setStyle(style, chars) {
     this.style = style;
-    this.figures.forEach((f, i) => f.setStyle(style, chars?.[i]?.color || CHAR_COLORS_FALLBACK[i]));
-    this.floor.visible = style !== 'silhouette';
-    for (const list of this.propPool.values()) for (const g of list) setPropStyle(g, style);
+    this.post = POST_STYLES[style] || null;
+    const base = this.post ? 'toon' : style;
+    this.baseStyle = base;
+    this.figures.forEach((f, i) => f.setStyle(base, chars?.[i]?.color || CHAR_COLORS_FALLBACK[i]));
+    this.floor.visible = base !== 'silhouette';
+    for (const list of this.propPool.values()) for (const g of list) setPropStyle(g, base);
   }
 
   poseFigures(spec, world, ctx) {
@@ -54,10 +73,11 @@ export class StoryRenderer {
     W.people.forEach((p, i) => {
       const f = this.figures[i];
       if (!f) return;
-      f.root.visible = true;
+      f.root.visible = !p.hidden && (this.only == null || this.only === i);
       f.root.position.copy(p.pos);
       f.root.rotation.set(0, p.yaw, 0);
       f.applyPose(p.pose, p.look);
+      f.setExpression?.(p.face?.expr || 'neutral', (p.face?.amount ?? 100) / 100);
     });
     for (let i = W.people.length; i < this.figures.length; i++) this.figures[i].root.visible = false;
     this.placeProps(W, ctx);
@@ -74,7 +94,7 @@ export class StoryRenderer {
       const k = used.get(id) || 0;
       used.set(id, k + 1);
       if (!list[k]) {
-        list[k] = buildProp(id, this.style);
+        list[k] = buildProp(id, this.baseStyle);
         this.propLayer.add(list[k]);
       }
       list[k].visible = true;
@@ -82,9 +102,13 @@ export class StoryRenderer {
     };
     this.scene.updateMatrixWorld(true);
     W.people.forEach((p, i) => {
+      if (this.only != null && this.only !== i) return;
       for (const use of p.props || []) placeProp(take(use.id), use, p, this.figures[i]);
     });
-    for (const use of ctx?.sceneProps || []) placeProp(take(use.id), { ...use, attach: 'world' }, null, null);
+    // a room's own floor replaces the grid; silhouettes keep just the figures
+    const scene = (ctx?.sceneProps || []).filter((u) => !(this.baseStyle === 'silhouette' && getProp(u.id)?.cat === 'architecture'));
+    this.floor.visible = this.baseStyle !== 'silhouette' && !scene.some((u) => getProp(u.id)?.floor);
+    if (this.only == null) for (const use of scene) placeProp(take(use.id), { ...use, attach: 'world' }, null, null);
   }
 
   // Guide renders for image generation: 'render' (current style), 'depth', 'lineart', 'silhouette'.
@@ -98,7 +122,7 @@ export class StoryRenderer {
 
   // Render an already-posed world through a given camera (motion frames use this too).
   // kind: 'render' (current style), 'depth', 'lineart', 'silhouette'.
-  renderPosed(W, ctx, camera, w, h, kind = 'render', chars = null) {
+  renderPosed(W, ctx, camera, w, h, kind = 'render', chars = null, opts = {}) {
     w = Math.max(2, Math.round(w));
     h = Math.max(2, Math.round(h));
     this.renderer.setSize(w, h, false);
@@ -106,6 +130,8 @@ export class StoryRenderer {
     const prevStyle = this.style;
     const prevBg = this.scene.background;
     const floorVis = this.floor.visible;
+    const clear = opts.transparent && kind === 'render';
+    if (clear) this.transparent(true);
     if (kind === 'depth') {
       let near = Infinity;
       let far = 0;
@@ -126,6 +152,7 @@ export class StoryRenderer {
       this.floor.visible = false;
     }
     this.renderer.render(this.scene, camera);
+    if (clear) this.transparent(false);
     this.scene.overrideMaterial = null;
     this.scene.background = prevBg;
     if (kind === 'lineart' || kind === 'silhouette') this.setStyle(prevStyle, chars);
@@ -133,9 +160,25 @@ export class StoryRenderer {
     return this.renderer.domElement;
   }
 
+  // Transparent background and no floor: effects drawn behind show through, characters stay in front.
+  transparent(on) {
+    if (on) {
+      this.savedBg = this.scene.background;
+      this.savedFloor = this.floor.visible;
+      this.scene.background = null;
+      this.floor.visible = false;
+      this.renderer.setClearColor(0x000000, 0);
+    } else {
+      this.scene.background = this.savedBg;
+      this.floor.visible = this.savedFloor;
+      this.renderer.setClearColor(0xffffff, 1);
+    }
+  }
+
   // Render one shot at w x h pixels; returns the WebGL canvas (valid until next render).
   // ext: {trim, area} boxes — frame the shot for `trim`, but render the larger `area` (print bleed).
-  renderShot(shot, world, w, h, ext = null) {
+  // opts: {transparent, only (cast index)}
+  renderShot(shot, world, w, h, ext = null, opts = {}) {
     w = Math.max(2, Math.round(w));
     h = Math.max(2, Math.round(h));
     this.renderer.setSize(w, h, false);
@@ -151,10 +194,63 @@ export class StoryRenderer {
       camera.projectionMatrix.premultiply(m);
       camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
     }
+    this.only = opts.only ?? null;
     this.poseFigures(shot.spec, world, shot.ctx);
+    if (opts.transparent) this.transparent(true);
     this.renderer.render(this.scene, camera);
+    if (opts.transparent) this.transparent(false);
+    this.only = null;
     return this.renderer.domElement;
   }
+}
+
+const POST_STYLES = { tone: 'tone', grayscale: 'gray' };
+
+// 2D finish for a rendered panel: 'gray' = greyscale; 'tone' = black ink, white paper and a 45° dot screen
+// for the mid-tones. Alpha is kept, so transparent renders stay transparent. cell: dot spacing in px.
+let postCanvas = null;
+export function postProcess(img, post, cell = 6) {
+  if (!post) return img;
+  const w = img.width;
+  const h = img.height;
+  postCanvas ||= document.createElement('canvas');
+  if (postCanvas.width !== w || postCanvas.height !== h) { postCanvas.width = w; postCanvas.height = h; }
+  const g = postCanvas.getContext('2d', { willReadFrequently: true });
+  g.clearRect(0, 0, w, h);
+  if (post === 'gray') {
+    g.filter = 'grayscale(1) contrast(1.05)';
+    g.drawImage(img, 0, 0);
+    g.filter = 'none';
+    return postCanvas;
+  }
+  g.drawImage(img, 0, 0);
+  const data = g.getImageData(0, 0, w, h);
+  const px = data.data;
+  const c = Math.max(3, cell);
+  const k = Math.SQRT1_2;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const o = (y * w + x) * 4;
+      if (px[o + 3] < 8) continue;
+      const L = (0.2126 * px[o] + 0.7152 * px[o + 1] + 0.0722 * px[o + 2]) / 255;
+      let ink;
+      if (L > 0.9) ink = false;
+      else if (L < 0.14) ink = true;
+      else {
+        // rotated cell coordinates -> distance to the nearest dot centre; a light curve keeps mid-tones airy
+        const u = ((x + y) * k) / c;
+        const v = ((x - y) * k) / c;
+        const du = u - Math.floor(u) - 0.5;
+        const dv = v - Math.floor(v) - 0.5;
+        const dark = Math.pow((0.9 - L) / 0.76, 1.7) * 0.8;
+        ink = Math.hypot(du, dv) < Math.sqrt(dark) * 0.56;
+      }
+      const val = ink ? 17 : 255;
+      px[o] = val; px[o + 1] = val; px[o + 2] = val;
+    }
+  }
+  g.putImageData(data, 0, 0);
+  return postCanvas;
 }
 
 // Depth for ControlNet-style guides: linear in view distance between uNear (white) and uFar (black).
@@ -278,8 +374,18 @@ export function drawPage(ctx, sr, layout, prop, world, opts) {
       ctx.drawImage(art, (e.x + (e.w - dw) / 2) * s, (e.y + (e.h - dh) / 2) * s, dw * s, dh * s);
       if (shot) drawPanelOverlays(ctx, pn, shot, world, { ...opts, border: layout.border }, i);
     } else if (shot) {
-      const img = sr.renderShot(shot, world, e.w * s, e.h * s, e === b ? null : { trim: b, area: e });
-      ctx.drawImage(img, e.x * s, e.y * s, e.w * s, e.h * s);
+      // effects: background layers first (the 3D render then goes on top with a clear background), front ones last
+      const fx = opts.panelFx?.[i]?.effects;
+      const back = hasBackEffect(fx);
+      const fxOpts = fx?.length ? { box: { x: e.x * s, y: e.y * s, w: e.w * s, h: e.h * s }, center: fxCenter(shot, b, s, fx), s, seed: `fx|${i}` } : null;
+      if (back) {
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(e.x * s, e.y * s, e.w * s, e.h * s);
+        drawEffects(ctx, fx, 'back', fxOpts);
+      }
+      const img = sr.renderShot(shot, world, e.w * s, e.h * s, e === b ? null : { trim: b, area: e }, { transparent: back });
+      ctx.drawImage(postProcess(img, sr.post, Math.max(3, 5.5 * s)), e.x * s, e.y * s, e.w * s, e.h * s);
+      if (fxOpts) drawEffects(ctx, fx, 'front', fxOpts);
       drawPanelOverlays(ctx, pn, shot, world, { ...opts, border: layout.border }, i);
     }
     ctx.restore();
@@ -315,9 +421,10 @@ export function drawPage(ctx, sr, layout, prop, world, opts) {
     ctx.stroke();
   };
 
-  // base panels, then their frames, then inset panels on top with a white halo
+  // base panels, then their frames, breakout figures, then inset panels on top with a white halo
   layout.panels.forEach((pn, i) => { if (!pn.inset) drawArt(pn, i); });
   layout.panels.forEach((pn) => { if (!pn.inset) frameOf(pn); });
+  drawBreakouts(ctx, sr, layout, prop, world, opts);
   layout.panels.forEach((pn, i) => {
     if (!pn.inset) return;
     polyPath(ctx, pn.poly, s);
@@ -361,6 +468,24 @@ export function drawPage(ctx, sr, layout, prop, world, opts) {
     });
   }
   ctx.restore();
+}
+
+// Breakout figures: the panel's subject is drawn again, unclipped, so it spills over the frame.
+function drawBreakouts(ctx, sr, layout, prop, world, opts) {
+  const s = opts.scale;
+  const { W, H } = layout;
+  layout.panels.forEach((pn, i) => {
+    const shot = prop?.shots[i];
+    if (!opts.panelFx?.[i]?.breakout || !shot || opts.panelImages?.[i] || pn.inset) return;
+    const b = pn.bbox;
+    const padX = b.w * 0.22;
+    const padY = b.h * 0.22;
+    const area = { x: Math.max(0, b.x - padX), y: Math.max(0, b.y - padY), w: 0, h: 0 };
+    area.w = Math.min(W, b.x + b.w + padX) - area.x;
+    area.h = Math.min(H, b.y + b.h + padY) - area.y;
+    const img = sr.renderShot(shot, world, area.w * s, area.h * s, { trim: b, area }, { transparent: true, only: shot.spec.subject });
+    ctx.drawImage(postProcess(img, sr.post, Math.max(3, 5.5 * s)), area.x * s, area.y * s, area.w * s, area.h * s);
+  });
 }
 
 function drawReadingFlow(ctx, layout, prop, s, show) {

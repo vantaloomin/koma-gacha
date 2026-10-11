@@ -17,6 +17,9 @@ Everything runs on your own machine. No account, no uploads.
 - **Lettering:** speech, thought, shout and whisper balloons, captions and sound effects with real text. Balloons avoid faces and bodies, stay inside the panel (or deliberately break the border) and can be dragged into place.
 - **Export:** PNG, layered SVG, JSON, and print-ready pages with bleed and crop marks (PNG at true size and DPI, PDF with TrimBox/BleedBox).
 - **Image prompts:** export a page or a single panel as a reference image plus a prompt for an image model such as GPT Image. The mannequin colours map to your character descriptions; anything you leave out becomes a `{VARIABLE}` to fill in.
+- **Script:** write a plot (cast, scenes, pages, one line per panel with staging tags such as `[Close-up, Low angle, Focus lines]`) and Koma builds the whole comic: it picks each page's layout from the panel tags, respects where page turns fall (reveals after a turn, cliffhangers before one), stages every panel with the camera gacha and letters it. Tweak any panel and write the change back into the plot.
+- **Comic look:** 27 effect lines and tones (focus lines, speed lines, beta and uni flashes, gloom lines, hatching, screentones, sparkles, flowers, rain, snow…), tone + lines and grayscale render styles, 16 balloon shapes (burst, wavy, electronic, eerie, brush…), linked balloons and breakout figures that spill over the panel border.
+- **Sets and faces:** ready-made rooms (classroom, bedroom, living room, café, office, street, park) built from walls, windows and CC0 furniture, and facial expressions (happy, angry, sad, surprised, relaxed) on mannequins and VRM models.
 - **Video:** turn a storyboard page into an animatic. Every panel becomes a timed shot; give a shot an end keyframe and Koma blends the camera move (push in, orbit, crane…), pose changes, people walking and group poses (e.g. two people stepping into a hug). Exports MP4 with subtitles or balloons, plus matching depth, line-art and OpenPose control videos for AI video models.
 - **MCP server:** create comics, add pages, direct panels, render and export through an MCP client such as Claude Code or Claude Desktop. A built-in `guide` tool gives the assistant craft tips on shots, pacing, layouts, acting, lettering and video.
 
@@ -51,12 +54,26 @@ Ports: the app uses **6170**. The MCP server's headless renderer uses **6171**, 
 
 ## Using Koma
 
-Koma has four workspaces (switch with `1` to `4`):
+Koma has five workspaces (switch with `1` to `5`):
 
 1. **Pages:** generate page layouts. Choose a preset, panel count range, format, bleed and reading direction, then browse the results and export one as SVG or PNG. The same layouts are available in Shots.
 2. **Shots:** stage a scene on a layout. Open the **Layout** and **Characters** drawers to choose the layout and cast, set each character's base pose, then press **Roll** (`R`) for camera proposals. Click a panel to edit its camera, poses, held props and script (balloons, caption, SFX). Drag balloons to reposition them, and double-click one to reset it. Export from the toolbar: PNG, SVG, print PNG, JSON, image prompt or a shareable link.
 3. **Poses:** the pose editor. Load a pose, drag the joint rings, add props, switch between solo, pair and trio, and **Save to library**. Saved poses go to `poses/custom/` and appear everywhere in Koma, including the MCP server.
 4. **Video:** plays the current Shots page as an animatic. Pick a shot on the timeline and set its length, how it starts (cut, dissolve or fade), a camera move, and how the shot ends: shot size, each character's end pose, where they walk, and a group pose. **Output** sets the size (16:9, 9:16, square, 2.35:1), frame rate, lettering (subtitles, balloons or none) and a slow drift on still shots. **Export** writes the MP4 animatic, depth / line-art / OpenPose control videos with the same timing, and a shot list. Video export needs a current Chrome or Edge (WebCodecs).
+5. **Script:** write the plot on the left; the pages appear in the middle as spreads, with the page turns marked. Click a panel to change its shot, poses, face and gaze (edited panels are locked), **Write edits to plot** to put them into the plot as tags, **Other layout** / **Other staging** / **Pin layout** per page, **Open in Shots** to fine-tune a page, and **Play as video** to watch every page as one animatic. **How to write** lists the syntax and every word Koma understands.
+
+```text
+Title: The Library
+Reading direction: Left to right
+Cast: Ken=M01 (174cm), Mia=F01 (152cm)
+# Scene: After school [Background classroom]
+Page 1
+1: Background (classroom window) [Establishing shot]
+2: Mia "You came!" Ken [Two-shot, Joy]
+3: Ken "You said 'together'." [Medium close-up] [Ken pose=Hands in pockets]
+Page 2 [Page-turn reveal]
+1: Ken "...You." [Climax, Close-up, Large panel, Focus lines]
+```
 
 Handy keys: `R` roll · `[` `]` previous/next proposal · Shift-click to multi-select · `Del` delete panels · `Ctrl+Z` undo · `Esc` deselect · `↑` `↓` walk the pose library · `Space` play/pause video · `←` `→` step a frame. The full list is in the About dialog.
 
@@ -87,7 +104,7 @@ claude mcp add --scope user koma -- node "/path/to/koma-gacha/mcp/server.js"
 
 Run `npm install` in the Koma folder first. The server starts its own headless renderer, so the app doesn't need to be running.
 
-**What it can do:** `create_comic`, `add_character`, `find_layouts`, `add_page`, `roll_page`, `edit_panel` (camera, poses, pair and trio poses, held props), `set_staging` (base poses, scene props), `set_page_script` / `set_panel_script`, `render_page`, `export_comic` (PNG, PDF, HTML, print with bleed and crop marks), `export_image_prompt`, `export_panel_guides`, `set_panel_image`, `set_shot_motion` / `preview_motion` / `export_video` (animatics and control videos), plus pose and prop browsing (`list_poses`, `pose_sheet`, `list_props`, `prop_sheet`, `save_pose`) and the `guide` tool for craft advice.
+**What it can do:** `comic_from_plot` (a whole comic from a plot; `get_plot` returns it), `create_comic`, `add_character`, `find_layouts`, `add_page`, `roll_page`, `edit_panel` (camera, poses, pair and trio poses, held props, effects, breakout), `set_staging` (base poses, scene props, rooms), `set_page_script` / `set_panel_script`, `render_page`, `export_comic` (PNG, PDF, HTML, print with bleed and crop marks), `export_image_prompt`, `export_panel_guides`, `set_panel_image`, `set_shot_motion` / `preview_motion` / `export_video` (animatics and control videos), plus pose and prop browsing (`list_poses`, `pose_sheet`, `list_props`, `prop_sheet`, `save_pose`) and the `guide` tool for craft advice.
 
 A typical request: *"Make a one-page comic: a soldier comes home from the war and sees his wife for the first time in years."* The assistant creates the characters, picks a layout with the hug as the key panel, directs each panel and exports the page.
 

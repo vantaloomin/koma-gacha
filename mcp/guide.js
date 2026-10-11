@@ -106,6 +106,40 @@ Use find_layouts to preview candidates (contact sheet) before committing.`,
    pair hugFriendly with a two_shot medium camera (5).
 4. render_page diagnostics=true → fix weak panels → render_page → export_image_prompt or export_comic.`,
 
+  plot: `PLOT (comic_from_plot): a whole comic from a script
+Title: The Library
+Reading direction: Left to right          (or Right to left for manga)
+First page: Right                          (sets where page turns fall; default right for ltr, left for rtl)
+Format: letter                             (b5 | letter | comic | sns | square)
+Cast: Ken=M01 (174cm), Mia=F01 (150cm)    (models: M01, F01, Doll)
+# Scene: Classroom after school [Background classroom]
+Page 1 [Title page]
+1: Background (classroom window) [Establishing shot]
+2: Mia "Hey, Ken..." Ken                   (names in the panel = who's there; first speaker leads the camera)
+3: Ken "...What?" [Reaction shot, Close-up]
+Page 2 [Page-turn reveal]
+1: Ken "Huh?" [Climax, Surprise, Focus lines, Large panel]
+
+CONTENTS: Name "line" · Name (thought) · Name <off-panel voice> · Name {phone} · Name "……" (silent) · Name (present)
+  Caption "…" · SFX "…" · Background (…) (no people) · "Line / Line" linked balloons · "Line\\nLine" line break
+STRUCTURED TAGS: [Camera pos=x,y,z rot=h,v roll=r lens=35mm] · [Ken pos=x,z facing=180 pose=Arms crossed face=angry,60 gaze=camera]
+  [Balloon Ken=Burst balloon] · [Effect Focus lines density=70 center=Ken] · [same=1-2] (same framing as page 1 panel 2) · [standing=1-2]
+WORDS (case and hyphens don't matter; CU, MCU, MS, LS, ELS, ECU, OTS, POV work):
+  size: Extreme long shot, Long shot, Full shot, Knee shot, Medium shot, Medium close-up, Close-up, Extreme close-up
+  angle: Bird's-eye view, High angle, Slight high angle, Eye level, Low angle, Worm's-eye view, Low/High position
+  view: Front, Three-quarter, Profile, Three-quarter back, From behind · lens: Ultra-wide, Wide-angle, Normal, Telephoto, Super-telephoto
+  tilt: Dutch angle, Strong Dutch angle · people: Two-shot, Group shot · composition: Centered, Lead room, Cornered framing, Frame left/right
+  technique: Establishing shot, Over-the-shoulder shot, POV shot, Reaction shot, Punch-in, Axial cut, Pull-back, Same-position shot,
+    Hold beat, Power-dynamic framing, Symmetrical composition, Averted gaze, Profile two-shot, Deep staging, Back shot, Negative space,
+    Insert shot, Eye close-up, Telephoto compression, Wide-angle exaggeration, Looking at the camera, Intimate two-shot
+  role: Establishing, Dialogue, Climax, Reaction, Beat · intent: Calm, Tension, Conflict, Surprise, Intimacy, Sadness, Comedy, Resolve, Unease, Joy
+  panel: Large panel, Small panel, Wide panel, Tall panel, Bleed, Breakout figure · page: Page-turn reveal, Cliffhanger, Two-page spread, Title page
+  balloons: Normal, Burst, Wavy, Whisper, Thought, Off-panel voice, Electronic, Eerie · effects: Focus lines, Speed lines, Beta flash, Uni flash, …
+  poses: any library pose name or id, or words like Arms crossed, Hands behind back, Bow, Leaning in, Looking back, Seiza, Stop gesture…
+TIPS: put reveals on the first panel after a page turn ([Page-turn reveal] page) and cliffhangers on the last panel before one; the tool
+  reports misplaced ones. Panel tags shape the layout (a [Large panel] gets the biggest panel). Rebuild with another seed for other
+  layouts/staging; then fine-tune with edit_panel as usual. get_plot returns the plot to edit.`,
+
   video: `VIDEO (set_shot_motion, preview_motion, export_video)
 - Every panel becomes a shot, in reading order. The panel is the START keyframe; set_shot_motion sets the END keyframe and the timing. Frames in between blend: joints rotate smoothly, people slide to new spots, the camera arcs around its subject.
 - Length: defaults to reading time (~3 words/s, 2–10 s). Give silent beats and key moments extra time (duration), and quick reactions less (1–1.5 s).
